@@ -1,8 +1,9 @@
 ---
-title: "PTRC p3 Batch correction and normalization"
-author: "Michael Nestor"
+title: "PTRC Ex18 Batch correction and normalization"
 output: html_document
 ---
+
+NOT YET USED. STILL DETERMINING WHETHER BATCH CORRECTION NECESSARY.
 
 ```{r setup}
 library(vp.misc)

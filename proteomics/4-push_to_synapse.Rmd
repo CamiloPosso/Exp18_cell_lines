@@ -1,6 +1,5 @@
 ---
-title: "PTRC p3 Push to synapse"
-author: "Michael Nestor (michael.nestor@pnnl.gov)"
+title: "PTRC Ex18 Push to synapse"
 output: html_document
 ---
 
