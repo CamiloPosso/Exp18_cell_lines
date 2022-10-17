@@ -1,0 +1,136 @@
+---
+title: "Ex18 Phospho proteomics"
+output: html_document
+---
+
+Preliminary summary
+
+
+
+
+```{r include=FALSE}
+library(MSnSet.utils)
+library(dplyr)
+library(ggplot2)
+library(readxl)
+
+global_crosstab <- read.table("../proteomics/data/global_data/ptrc_ex18_crosstab_global_gene_original.txt")
+phospho_crosstab <- read.table("../proteomics/data/phospho_data/ptrc_ex18_crosstab_phospho_siteID_original.txt")
+meta <- read_excel("../proteomics/data/Exp18_metadata_01-14-2021.xlsx") %>%
+  filter(!is.na(Index)) %>%
+  mutate(Index = as.character(Index),
+         Plex = as.character(Plex)) %>% as.data.frame()
+rownames(meta) <- meta$Index
+
+colnames(global_crosstab) <- sub("^X", "", colnames(global_crosstab))
+colnames(phospho_crosstab) <- sub("^X", "", colnames(phospho_crosstab))
+
+```
+
+
+Missing data
+
+
+```{r}
+global_missing <- rowSums(is.na(global_crosstab))
+phospho_missing <- rowSums(is.na(phospho_crosstab))
+
+## 50 % missingness filter, lose 178 global features and 27205 phosphosites
+global_crosstab <- global_crosstab[global_missing < ncol(global_crosstab)/2, ]
+phospho_crosstab <- phospho_crosstab[phospho_missing < ncol(phospho_crosstab)/2, ]
+
+```
+
+
+Raw data stats.
+
+
+```{r}
+## row medians
+hist(apply(global_crosstab, 1, median, na.rm = T))
+hist(apply(phospho_crosstab, 1, median, na.rm = T))
+
+global_row_medians <- apply(global_crosstab, 1, median, na.rm = T)
+phospho_row_medians <- apply(phospho_crosstab, 1, median, na.rm = T)
+global_crosstab <- sweep(global_crosstab, 1, global_row_medians, FUN = '-')
+phospho_crosstab <- sweep(phospho_crosstab, 1, phospho_row_medians, FUN = '-')
+
+```
+
+
+
+```{r}
+## sample medians
+hist(apply(global_crosstab, 2, median, na.rm = T))
+hist(apply(phospho_crosstab, 2, median, na.rm = T))
+
+## Using global coefficients to normalize phospho.
+global_sample_coef <- apply(global_crosstab, 2, median, na.rm = T)
+
+global_crosstab <- sweep(global_crosstab, 2, global_sample_coef, FUN = '-')
+phospho_crosstab <- sweep(phospho_crosstab, 2, global_sample_coef, FUN = '-')
+
+```
+
+
+
+```{r}
+m_global <- MSnSet(exprs = global_crosstab %>% as.matrix(), 
+                   pData = meta[colnames(global_crosstab), ])
+
+m_phospho <- MSnSet(exprs = phospho_crosstab %>% as.matrix(), 
+                    pData = meta[colnames(phospho_crosstab), ])
+
+```
+
+
+Both datasets show strong batch effect
+
+
+```{r}
+plot_pca(m_global, phenotype = "Plex") + ggtitle("Global PCA - All features by Plex")
+plot_pca(m_phospho, phenotype = "Plex") + ggtitle("Phospho PCA - All features by Plex")
+
+```
+
+
+```{r}
+m_global_corrected <- correct_batch_effect_NA(m_global, "Plex", par.prior = T)
+m_phospho_corrected <- correct_batch_effect_NA(m_phospho, "Plex", par.prior = T)
+
+```
+
+
+
+```{r}
+plot_pca(m_global_corrected, phenotype = "Plex") + ggtitle("Global PCA - All features by Plex, Corrected")
+plot_pca(m_phospho_corrected, phenotype = "Plex") + ggtitle("Phospho PCA - All features by Plex, Corrected")
+
+```
+
+
+```{r}
+plex_global <- limma_gen(m_global, "~Plex", "Plex")
+plex_phospho <- limma_gen(m_phospho, "~Plex", "Plex")
+
+plex_global_corrected <- limma_gen(m_global_corrected, "~Plex", "Plex")
+plex_phospho_corrected <- limma_gen(m_phospho_corrected, "~Plex", "Plex")
+
+
+```
+
+
+
+```{r}
+hist(plex_global$P.Value)
+hist(plex_global_corrected$P.Value)
+
+hist(plex_phospho$P.Value)
+hist(plex_phospho_corrected$P.Value)
+
+```
+
+
+
+
+
