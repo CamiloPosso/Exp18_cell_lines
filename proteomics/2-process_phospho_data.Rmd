@@ -1,6 +1,5 @@
 ---
-title: "PTRC p3 Phosphoproteomics pipeline"
-author: "Michael Nestor"
+title: "Ex18 Phospho proteomics"
 output: html_document
 ---
 
