@@ -22,7 +22,7 @@ library(tidyverse)
 
 data_package_num <- 4136
 data_folder <- "data/phospho_data"
-crosstab_prefix <- "ptrc_ex10"
+crosstab_prefix <- "ptrc_ex18"
 path_to_global_crosstab <- "data/global_data/ptrc_ex18_crosstab_global_gene_original.txt"
 
 dir.create(data_folder)
@@ -118,16 +118,6 @@ show(msnid)
 ```
 
 
-## Remove decoys
-
-
-```{r apply_decoy_filter}
-msnid <- apply_filter(msnid, "!isDecoy")
-show(msnid)
-
-```
-
-
 ## Parsimonious inference
 
 To reduce number of protein identifications, we use a parsimonious inference algorithm described in 
@@ -138,6 +128,16 @@ To reduce number of protein identifications, we use a parsimonious inference alg
 global_crosstab <- read.table(path_to_global_crosstab)
 msnid <- infer_parsimonious_accessions(msnid, unique_only=FALSE,
                                        prior = rownames(global_crosstab))
+show(msnid)
+
+```
+
+
+## Remove decoys
+
+
+```{r apply_decoy_filter}
+msnid <- apply_filter(msnid, "!isDecoy")
 show(msnid)
 
 ```
@@ -158,7 +158,7 @@ msnid <- map_mod_sites(msnid, fst,
                        peptide_mod_col = "peptide", 
                        mod_char = "*",
                        site_delimiter = "lower")
-msnid <- apply_filter(msnid, "!is.na(PepLocFirst)")
+# msnid <- apply_filter(msnid, "!is.na(PepLocFirst)")
 head(psms(msnid))
 
 save(msnid, file=file.path(data_folder, "msgfData_filtered.RData"))
@@ -210,7 +210,7 @@ crosstab <- create_crosstab(msnid, masic_data,
                             fractions, samples, references)
 dim(crosstab)
 
-write.table(signif(crosstab, 3),
+write.table(signif(crosstab, 5),
             file=file.path(data_folder, paste(crosstab_prefix, "crosstab_phospho_siteID_original.txt", sep="_")),
             quote=F, sep="\t")
 
@@ -225,11 +225,9 @@ crosstab <- create_crosstab(msnid, masic_data,
                             fractions, samples, references)
 dim(crosstab)
 
-write.table(signif(crosstab, 3),
+write.table(signif(crosstab, 5),
             file=file.path(data_folder, paste(crosstab_prefix, "crosstab_phospho_peptide_original.txt", sep="_")),
             quote=F, sep="\t")
-
-t1 <- Sys.time(); print(t1); print(t1 - t0)
 
 ```
 

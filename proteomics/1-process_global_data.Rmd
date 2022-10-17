@@ -22,7 +22,7 @@ library(tidyverse)
 
 data_package_num <- 4135
 data_folder <- "data/global_data/"
-crosstab_prefix <- "ptrc_ex18_"
+crosstab_prefix <- "ptrc_ex18"
 
 dir.create(data_folder)
 
