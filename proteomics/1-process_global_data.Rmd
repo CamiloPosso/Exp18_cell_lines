@@ -181,8 +181,7 @@ quant_cross_tab <- create_crosstab(msnid,
                                    fractions, samples, references)
 dim(quant_cross_tab)
 
-write.table(quant_cross_tab,
-            file=file.path(data_folder, paste(crosstab_prefix, "crosstab_global_gene_original.txt", sep="_")),
+write.table(quant_cross_tab, file=file.path(data_folder, paste(crosstab_prefix, "crosstab_global_gene_original.txt", sep="_")),
             quote=F, sep="\t")
 ```
 

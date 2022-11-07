@@ -1,7 +1,6 @@
 # Pipeline data
 proteomics/data
 
-
 # History files
 .Rhistory
 .Rapp.history
@@ -11,6 +10,7 @@ proteomics/data
 
 # User-specific files
 .Ruserdata
+.Rcache
 
 # Example code in package build process
 *-Ex.R
@@ -41,3 +41,11 @@ vignettes/*.pdf
 
 # R Environment Variables
 .Renviron
+
+# Figures and tables
+treatments_vs_parental/Figures
+treatments_vs_parental/Tables
+treatments_vs_parental/old
+
+# Powerpoints
+ppts

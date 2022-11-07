@@ -35,6 +35,9 @@ Missing data
 global_missing <- rowSums(is.na(global_crosstab))
 phospho_missing <- rowSums(is.na(phospho_crosstab))
 
+hist(global_missing)
+hist(phospho_missing)
+
 ## 50 % missingness filter, lose 178 global features and 27205 phosphosites
 global_crosstab <- global_crosstab[global_missing < ncol(global_crosstab)/2, ]
 phospho_crosstab <- phospho_crosstab[phospho_missing < ncol(phospho_crosstab)/2, ]
@@ -105,6 +108,19 @@ m_phospho_corrected <- correct_batch_effect_NA(m_phospho, "Plex", par.prior = T)
 ```{r}
 plot_pca(m_global_corrected, phenotype = "Plex") + ggtitle("Global PCA - All features by Plex, Corrected")
 plot_pca(m_phospho_corrected, phenotype = "Plex") + ggtitle("Phospho PCA - All features by Plex, Corrected")
+
+```
+
+Push to synapse.
+
+```{r}
+write.table(exprs(m_global_corrected), 
+            file = "data/global_data/ptrc_ex18_crosstab_global_gene_corrected.txt",
+            quote=F, sep="\t")
+
+write.table(exprs(m_phospho_corrected), 
+            file = "data/phospho_data/ptrc_ex18_crosstab_phospho_SiteID_corrected.txt",
+            quote=F, sep="\t")
 
 ```
 
