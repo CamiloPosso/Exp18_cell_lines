@@ -81,7 +81,9 @@ data_df <- exprs(m_phospho) %>% as.data.frame() %>% mutate(feature = rownames(ex
 phospho_missing_detailed <- tidyr::pivot_longer(data_df, -feature, values_to = "value", 
                                                 names_to = "Index") %>%
   merge(pData(m_phospho), by = "Index") %>%
-  mutate(missing = is.na(value))
+  mutate(missing = is.na(value)) %>%
+  group_by(Plex, feature) %>%
+  mutate(missing_plex = sum(missing))
 
 table(phospho_missing_detailed$missing, phospho_missing_detailed$Plex)
 
@@ -553,6 +555,68 @@ ann_colors <- list(`State` = c("Early" = "white", "Late" = "gray30"),
 pheatmap(mat, cluster_cols = F, display_numbers = mat_pval, annotation_col = ann_col,
          annotation_colors = ann_colors, filename = plot_path, width = 10, height = 8,
          main = plot_title, fontsize_number = 14)
+
+```
+
+
+
+## Uploading to Synapse
+
+
+```{r}
+source("../util/synapseUtil.R")
+
+## Raw gsea plots
+plot_paths <- list.files(path = "Figures/", pattern = "^GSEA.*$", full.names = T)
+lapply(plot_paths, synapseStore, parentId = "syn44272599")
+
+## gsea summaries
+plot_paths <- list.files(path = "Figures/", pattern = "^gsea_treatment_state_summary.*$", full.names = T)
+lapply(plot_paths, synapseStore, parentId = "syn44272154")
+
+
+```
+
+
+```{r}
+
+## gsea tables
+for (t2g_name in c("reactome", "biocarta", "wikipath", "pid", 
+                   "gomf", "gocc", "gobp", "hallmark", "kegg")){
+  combined_gsea <- data.frame()
+  for (tbl_path  in list.files(path = "Tables/", pattern = paste0("GSEA_.*_", t2g_name))){
+    this_comparison <- sub("GSEA_(.*)_vs_Parental_and_none_.*", "\\1", tbl_path)
+    xx <- read.table(paste0("Tables/", tbl_path), sep = "\t") %>%
+      mutate(Description = str_wrap(Description, width = 50), 
+             comparison = this_comparison,
+             Treatment = sub("^.*_and_", "", comparison),
+             State = sub("_and_.*$", "", comparison))
+    
+    combined_gsea <- rbind(combined_gsea, xx)
+  }
+  
+  combined_gsea <- combined_gsea %>%
+    select(Description, NES, pvalue, p.adjust, comparison) %>%
+    mutate(comparison = paste(comparison, "vs Parental"),
+           DB = t2g_name)
+  
+  if (t2g_name %in% c("reactome", "biocarta", "kegg", "gobp", "gomf", "gocc", "pid")){
+    t2g_name_pattern <- paste(t2g_name, "")
+    combined_gsea <- combined_gsea %>%
+      mutate(Description = sub(t2g_name_pattern, "", Description, ignore.case = T))
+  } else if (t2g_name == "hallmark"){
+    combined_gsea <- combined_gsea %>%
+      mutate(Description = sub("hallmark_", "", Description, ignore.case = T))
+  } else {
+    combined_gsea <- combined_gsea %>%
+      mutate(Description = sub("WP ", "", Description, ignore.case = T))
+  }
+           
+  
+  tbl_path <- paste0("Tables/treatment_state_vs_parental_gsea_", t2g_name, ".xlsx")
+  write.xlsx(combined_gsea, file = tbl_path, sep = "\t", quote = F)
+  synapseStore(tbl_path, "syn44272255")
+}
 
 ```
 

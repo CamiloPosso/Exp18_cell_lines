@@ -13,8 +13,8 @@ syn <- synapseLogin()
 
 
 ```{r upload}
-synapse_id_map <- c("syn40359759" = "data/global_data/",
-                    "syn40359759" = "data/phospho_data/")
+synapse_id_map <- c("syn43185649" = "data/global_data/",
+                    "syn43185649" = "data/phospho_data/")
 
 for (i in seq_along(synapse_id_map)) {
   crosstabs <- list.files(path = synapse_id_map[i],
