@@ -21,10 +21,10 @@ library(Biostrings)
 library(tidyverse)
 
 data_package_num <- 4135
-data_folder <- "data/global_data/"
+data_folder <- "data/global_data"
 crosstab_prefix <- "ptrc_ex18"
 
-dir.create(data_folder)
+# dir.create(data_folder)
 
 ```
 
@@ -86,6 +86,8 @@ conv <- data.frame(NAME = names(fst)) %>%
   mutate(UNIPROT = sub(".*\\|(.*)\\|.*", "\\1", UNIPROT),
          SYMBOL = sub("GN=", "", SYMBOL))
 
+msnid_prot <- msnid
+
 msnid <- remap_accessions_uniprot_to_gene(msnid,
                                           organism_name="Homo sapiens",
                                           conversion_table = conv)
@@ -103,13 +105,16 @@ show(msnid)
 
 ```{r protein_level_filter }
 fst_dms_pth_2 <- remap_fasta_entry_names(fst_dms_pth, conv, "^.*\\|(.+?)(-\\d+)?\\|.*")
-fst <- readAAStringSet(fst_dms_pth_2)
-names(fst) <- sub("^([A-Z]P_\\d+\\.\\d+)\\s.*", "\\1", names(fst))
 
 ## peptide density and accession filter
 msnid <- compute_num_peptides_per_1000aa(msnid, fst_dms_pth_2)
 msnid <- filter_msgf_data_protein_level(msnid, 0.01)
 show(msnid)
+
+
+msnid_prot <- compute_num_peptides_per_1000aa(msnid_prot, fst_dms_pth)
+msnid_prot <- filter_msgf_data_protein_level(msnid_prot, 0.01)
+show(msnid_prot)
 
 ```
 
@@ -121,7 +126,9 @@ To reduce number of protein identifications, we use a parsimonious inference alg
 
 ```{r parsimonious_inference}
 msnid <- infer_parsimonious_accessions(msnid, unique_only=FALSE)
+msnid_prot <- infer_parsimonious_accessions(msnid_prot, unique_only=FALSE)
 show(msnid)
+show(msnid_prot)
 
 ```
 
@@ -131,6 +138,9 @@ show(msnid)
 ```{r}
 msnid <- apply_filter(msnid, "!isDecoy")
 show(msnid)
+
+msnid_prot <- apply_filter(msnid_prot, "!isDecoy")
+show(msnid_prot)
 
 save(msnid, file=file.path(data_folder, "msgfData_filtered.RData"))
 
@@ -185,5 +195,47 @@ write.table(quant_cross_tab, file=file.path(data_folder, paste(crosstab_prefix, 
             quote=F, sep="\t")
 ```
 
+
+
+
+```{r create_global_peptide_crosstab}
+aggregation_level <- c("peptide")
+quant_cross_tab <- create_crosstab(msnid, 
+                                   masic_data, 
+                                   aggregation_level, 
+                                   fractions, samples, references)
+dim(quant_cross_tab)
+
+xx <- psms(msnid) %>% select(accession, peptide, pepSeq) %>% unique()
+crosstab <- quant_cross_tab %>% as.data.frame()
+crosstab$peptide <- rownames(crosstab)
+
+crosstab <- left_join(crosstab, xx, by = "peptide")
+write.table(crosstab %>% select(peptide, pepSeq, accession, everything()), 
+            file=file.path(data_folder, paste(crosstab_prefix, "crosstab_global_peptide_original.txt", sep="_")),
+            quote=F, sep="\t")
+
+```
+
+
+```{r create_global_gene_crosstab}
+psms(msnid_prot)$accession <- sub("^.*\\|(.*)\\|.*$", "\\1", psms(msnid_prot)$accession)
+
+psms(msnid_prot) <- psms(msnid_prot) %>%
+  filter(!grepl("Contaminant", accession))
+
+aggregation_level <- c("accession")
+quant_cross_tab_prot <- create_crosstab(msnid_prot, 
+                                        masic_data, 
+                                        aggregation_level, 
+                                        fractions, samples, references)
+dim(quant_cross_tab_prot)
+
+write.table(quant_cross_tab_prot, file=file.path(data_folder, paste(crosstab_prefix, "crosstab_global_prot_original.txt", sep="_")),
+            quote=F, sep="\t")
+
+# write.table(quant_cross_tab, file=file.path(data_folder, paste(crosstab_prefix, "crosstab_global_gene_original.txt", sep="_")),
+#             quote=F, sep="\t")
+```
 
 

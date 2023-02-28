@@ -1,0 +1,106 @@
+
+---
+title: "Ex18 combined tables upload"
+output: html_document
+---
+
+Preliminary summary
+
+
+
+
+```{r include=FALSE}
+source("../../helper_scripts.R")
+
+library(ggplot2)
+library(readxl)
+library(pheatmap)
+library(msigdbr)
+library(stringr)
+
+global_crosstab <- read.table("../../proteomics/data/global_data/ptrc_ex18_crosstab_global_gene_corrected.txt")
+phospho_crosstab <- read.table("../../proteomics/data/phospho_data/ptrc_ex18_crosstab_phospho_siteID_corrected.txt")
+phospho_prot_crosstab <- read.table("../../proteomics/data/phospho_data/ptrc_ex18_crosstab_phospho_SiteID_prot_corrected.txt")
+meta <- read_excel("../../proteomics/data/Exp18_metadata_01-14-2021.xlsx") %>%
+  filter(!is.na(Index)) %>%
+  mutate(Index = as.character(Index),
+         Plex = as.character(Plex),
+         comp1_ = paste(State, Treatment, sep = "_and_")) %>% as.data.frame()
+rownames(meta) <- meta$Index
+
+colnames(global_crosstab) <- sub("^X", "", colnames(global_crosstab))
+colnames(phospho_crosstab) <- sub("^X", "", colnames(phospho_crosstab))
+colnames(phospho_prot_crosstab) <- sub("^data.", "", colnames(phospho_prot_crosstab))
+
+
+m_global <- MSnSet(exprs = global_crosstab %>% as.matrix(), 
+                   pData = meta[colnames(global_crosstab), ])
+
+m_phospho <- MSnSet(exprs = phospho_crosstab %>% as.matrix(), 
+                    pData = meta[colnames(phospho_crosstab), ])
+
+```
+
+
+## Upload all differential expression tables
+
+
+```{r}
+combined <- data.frame()
+for (file_path in list.files(path = "../treatments_vs_parental/Tables/", "diffexp_.*__Global.txt", full.names = TRUE)){
+  xx <- read.table(file_path, sep = "\t") %>%
+    select(feature, logFC, adj_pval = welch_adj, pval = welch_pval, contrast)
+  combined <- rbind(combined, xx)
+}
+
+combined_global <- combined %>%
+  filter(adj_pval < 0.05) %>%
+  mutate(contrast = gsub("_", " ", contrast),
+         contrast = sub("-", " vs ", contrast))
+write.table(x = combined_global, "diffexp_treatments_vs_parental_global.txt", sep = "\t")
+openxlsx::write.xlsx(combined_global, file = "diffexp_treatments_vs_parental_global.xlsx")
+
+combined <- data.frame()
+for (file_path in list.files(path = "../treatments_vs_parental/Tables/", "diffexp_.*__Phospho.txt", full.names = TRUE)){
+  xx <- read.table(file_path, sep = "\t") %>%
+    select(feature, logFC, adj_pval = welch_adj, pval = welch_pval, contrast)
+  combined <- rbind(combined, xx)
+}
+
+combined_phospho <- combined %>%
+  filter(adj_pval < 0.05) %>%
+  mutate(contrast = gsub("_", " ", contrast),
+         contrast = sub("-", " vs ", contrast))
+write.table(x = combined_phospho, "diffexp_treatments_vs_parental_phospho.txt", sep = "\t")
+openxlsx::write.xlsx(combined_phospho, file = "diffexp_treatments_vs_parental_phospho.xlsx")
+
+```
+
+
+
+```{r}
+source("../../util/synapseUtil.R")
+syn <- synapseLogin()
+synapseStore("diffexp_treatments_vs_parental_phospho.xlsx", "syn44272255")
+synapseStore("diffexp_treatments_vs_parental_global.xlsx", "syn44272255")
+
+```
+
+
+## Upload KSEA tables
+
+
+```{r}
+source("../../util/synapseUtil.R")
+syn <- synapseLogin()
+xx <- read.table("KSEA_NetworKIN_5_combined.txt", sep = "\t")
+openxlsx::write.xlsx(xx, file = "treatment_state_vs_parental_ksea.xlsx")
+synapseStore("treatment_state_vs_parental_ksea.xlsx", "syn44272255")
+
+```
+
+
+
+
+
+

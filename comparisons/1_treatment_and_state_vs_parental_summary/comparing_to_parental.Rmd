@@ -1,0 +1,883 @@
+---
+title: "Ex18 Phospho proteomics"
+output: html_document
+---
+
+Preliminary summary
+
+
+
+
+```{r include=FALSE}
+library(MSnSet.utils)
+library(clusterProfiler)
+library(dplyr)
+library(ggplot2)
+library(readxl)
+library(pheatmap)
+library(msigdbr)
+library(stringr)
+
+global_crosstab <- read.table("../../proteomics/data/global_data/ptrc_ex18_crosstab_global_gene_corrected.txt")
+phospho_crosstab <- read.table("../../proteomics/data/phospho_data/ptrc_ex18_crosstab_phospho_siteID_corrected.txt")
+phospho_prot_crosstab <- read.table("../../proteomics/data/phospho_data/ptrc_ex18_crosstab_phospho_SiteID_prot_corrected.txt")
+meta <- read_excel("../../proteomics/data/Exp18_metadata_01-14-2021.xlsx") %>%
+  filter(!is.na(Index)) %>%
+  mutate(Index = as.character(Index),
+         Plex = as.character(Plex),
+         comp1_ = paste(State, Treatment, sep = "_and_")) %>% as.data.frame()
+rownames(meta) <- meta$Index
+
+colnames(global_crosstab) <- sub("^X", "", colnames(global_crosstab))
+colnames(phospho_crosstab) <- sub("^X", "", colnames(phospho_crosstab))
+colnames(phospho_prot_crosstab) <- sub("^data.", "", colnames(phospho_prot_crosstab))
+
+
+m_global <- MSnSet(exprs = global_crosstab %>% as.matrix(), 
+                   pData = meta[colnames(global_crosstab), ])
+
+m_phospho <- MSnSet(exprs = phospho_crosstab %>% as.matrix(), 
+                    pData = meta[colnames(phospho_crosstab), ])
+
+## data only
+phospho_prot_mat <- phospho_prot_crosstab[, intersect(as.character(1:47), colnames(phospho_prot_crosstab))]
+mapping_df <- phospho_prot_crosstab %>%
+  mutate(feature = rownames(.)) %>%
+  select(feature, Peptide_kstar, Protein_kstar, SiteID)
+
+m_phospho_prot <- MSnSet(exprs = phospho_prot_mat %>% as.matrix(), 
+                         pData = meta[colnames(phospho_crosstab), ])
+
+```
+
+
+```{r GSEA helper}
+GSEA_helper <- function(m, contrasts, t2g, t2g_name = ""){
+  limma_res <- limma_contrasts(m, model.str = "~0 + comp1_", 
+                               coef.str = "comp1_", contrasts = contrasts)
+  
+  plot_title <- gsub("comp1_", "", contrasts) %>% gsub("_", " ", .) %>% gsub("-", " vs ", .)
+  group1 <- sub(" vs .*$", "", plot_title)
+  group2 <- sub("^.* vs ", "", plot_title)
+  plot_path <- gsub(" ", "_", plot_title) %>% paste0("GSEA_", ., paste0(t2g_name, ".png"))
+  tbl_path <- sub(".png", ".txt", plot_path) %>% paste0("Tables/", .)
+  
+  ## For some pathways, gsea is unable to assess a pvalue. These are removed by the function
+  ## Internally. This is why some pathways (like "GOBP NCRNA METABOLISM") are excluded from
+  ## the result.
+  if (file.exists(tbl_path)){
+    print("using saved results")
+    gsea_res <- read.table(tbl_path, sep = "\t")
+  } else {
+    fold_change <- limma_res$logFC
+    names(fold_change) <- limma_res$feature
+    fold_change <- sort(fold_change, decreasing = TRUE)
+    set.seed(69)
+    
+    gsea_res <- GSEA(fold_change, eps = 1e-16, minGSSize = 10, 
+                          pvalueCutoff = 1, TERM2GENE = t2g)@result %>%
+      dplyr::select(Description, setSize, NES, pvalue, p.adjust, core_enrichment)
+    write.table(x = gsea_res, file = tbl_path, 
+                sep = "\t", quote = F)
+  }
+  
+  yy <- gsea_res # %>%
+  #   compress_enrichment(colname = "p.adjust", threshold = 0.75) %>%
+  #   filter(p.adjust < 0.05)
+  plot_df <- yy %>% select(`Biological Process` = Description, NES) %>%
+    mutate(Group = sign(NES)) %>%
+    group_by(Group) %>%
+    top_n(n = 10, wt = abs(NES)) %>%
+    arrange(NES) %>%
+    mutate(`Biological Process` = str_wrap(`Biological Process`, width = 50)) %>%
+    mutate(`Biological Process` = factor(`Biological Process`, levels = `Biological Process`),
+           Group = as.factor(Group))
+    
+  p <- ggplot(plot_df, aes(x = NES, y = `Biological Process`, fill = Group)) + 
+    geom_bar(stat = 'identity', color = "gray30") + 
+    scale_fill_manual(values = c("#619CFF", "#F8766D"), 
+                      labels = c(group2, group1)) + 
+    ggtitle(paste0("GSEA - ", plot_title)) + theme_bw() +
+    theme(axis.text = element_text(size = 18),
+          axis.title = element_text(size = 18),
+          legend.text = element_text(size = 18),
+          title = element_text(size = 19))
+  
+  ggsave(filename = paste0("Figures/", plot_path), plot = p, height = 12, width = 16)
+}
+
+
+```
+
+
+```{r Heatmap helper}
+
+heatmap_helper <- function(m, contrasts, plot_title){
+  
+  plot_path = gsub(" ", "_", plot_title) %>% gsub("-", "", .) %>% paste0(., ".png") %>%
+    paste("heatmap", ., sep = "_")
+  tbl_path <- sub(".png", ".txt", plot_path) %>% sub("heatmap", "diffexp", .) %>%
+    paste0("Tables/", .)
+  
+  if (file.exists(tbl_path)){
+    print("using saved results")
+    limma_res <- read.table(tbl_path, sep = "\t")
+  } else {
+    limma_res <- limma_contrasts(m, model.str = "~0 + comp1_", 
+                                 coef.str = "comp1_", contrasts = contrasts)
+    
+    p_values_t_test <- vector(mode="character", length = nrow(limma_res))
+    p_values_welch_test <- vector(mode="character", length = nrow(limma_res))
+    counter = 1
+    for (feature in limma_res$feature){
+      data_df <- data.frame(value = exprs(m)[feature, ],
+                            sample = colnames(exprs(m))) %>%
+        merge(pData(m) %>% select(sample = Index, comp1_), by = "sample")
+      
+      p_values_t_test[[counter]] <- tryCatch({t.test(value ~ comp1_, data = data_df, 
+                                                     alternative = "two.sided", var.equal = TRUE)[[3]]}, 
+                                             error = function(e) {NA}) 
+      p_values_welch_test[[counter]] <- tryCatch({t.test(value ~ comp1_, data = data_df, 
+                                                     alternative = "two.sided", var.equal = FALSE)[[3]]}, 
+                                             error = function(e) {NA}) 
+      counter = counter + 1
+    }
+    limma_res <- limma_res %>%
+      mutate(t_test_pval = as.numeric(p_values_t_test),
+             t_test_adj = p.adjust(t_test_pval, method = "BH"),
+             welch_pval = as.numeric(p_values_welch_test),
+             welch_adj = p.adjust(welch_pval, method = "BH"))
+    
+    write.table(limma_res %>% select(feature, logFC, limma_pval = P.Value, 
+                                   limma_adj = adj.P.Val, t_test_pval, 
+                                   t_test_adj, welch_pval, welch_adj, contrast), 
+                sep = "\t", quote = F, file = tbl_path)
+  }
+  
+  significant_genes <<- limma_res %>%
+    mutate(sgn = sign(logFC)) %>%
+    group_by(sgn) %>%
+    top_n(n = 25, wt = -log(welch_adj))
+  m.selected <- m[significant_genes$feature, ]
+  plot_mat <- exprs(m.selected)
+  #plot_mat <- sweep(plot_mat, 1, apply(plot_mat, 1, mean, na.rm = T), FUN = '-')
+  
+  ann_col <- pData(m.selected) %>%
+    select(State, Treatment)
+  ann_colors <- list(`State` = c("Early" = "#619CFF", "Late" = "#F8766D",
+                                 "Parental" = "yellow", "Spontaneous" = "white"),
+                     `Treatment` = c("none" = "gray77", "G" = "#FF0000", "GV" = "goldenrod1",
+                                     "GD" = "mediumpurple", "GVD" = "tan3"))
+  
+  color_pal <- rev(RColorBrewer::brewer.pal(n = 9, name = "RdBu"))
+  color_pal <- c(colorRampPalette(color_pal[1:5])(15), colorRampPalette(color_pal[5:9])(15))
+  breaks_buddy <- c(seq(-2.5, -0.001, length.out = 15), 
+                    0, 
+                    seq(0.001, 2.5, length.out = 15))
+  
+  pheatmap(plot_mat, clustering_method = "ward.D", annotation_col = ann_col, fontsize = 16, 
+           annotation_colors = ann_colors, color = color_pal, breaks = breaks_buddy, height = 12, 
+           width = 10, main = plot_title, filename = plot_path)
+}
+
+```
+
+
+```{r Compress enrichment}
+compress_enrichment <- function(enrichment_array, threshold = .75, colname='Count',
+                                descending = FALSE) {
+  library('stringr')
+  
+  jaccard_index <- function(set1, set2) {
+    union = union(set1, set2)
+    union = length(union)
+    max_size = max(length(set1), length(set2))
+    if (union == max_size) {
+      return(1.)
+    }
+    return(as.double(length(intersect(set1, set2))) / as.double(union))
+  }
+  
+  # sort enrichment array by attribute of choice
+  enrichment_array <- enrichment_array%>%
+    dplyr::mutate(sortval := !! sym(colname))
+  
+  if (descending){
+    enrichment_array <- enrichment_array %>%
+      dplyr::arrange(-sortval)
+  } else {
+    enrichment_array <- enrichment_array %>%
+      dplyr::arrange(sortval)
+  }
+  
+  # create names to iterate through and Jaccard distance between all
+  names <- enrichment_array$Description
+  
+  term_sets <-
+    stringr::str_split(enrichment_array$core_enrichment, "/")
+  
+  n_dim = length(names)
+  terms <- rep(TRUE, n_dim)
+  # start at top term, find similarity between lower terms, 
+  # there is one too similar, add to remove list
+  for (i in 1:n_dim) {
+    term_1 <- names[i]
+    if (terms[[i]] & i < n_dim)
+      for (j in (i+1):n_dim) {
+        term_2 <- names[j]
+        score = jaccard_index(unlist(term_sets[i]),
+                              unlist(term_sets[j]))
+        if (score > threshold)
+          terms[[j]] <- FALSE
+      }
+    
+  }
+  enrichment_array_keep <- enrichment_array[terms, ] %>%
+    dplyr::select(-sortval)
+  return(enrichment_array_keep)
+}
+
+
+```
+
+
+```{r Summary of missing data}
+global_missing <- data.frame(missing = rowSums(is.na(exprs(m_global))),
+                             feature = rownames(exprs(m_global)))
+
+phospho_missing <- data.frame(missing = rowSums(is.na(exprs(m_phospho))),
+                              feature = rownames(exprs(m_phospho)))
+
+plot_df <- global_missing %>%
+  group_by(missing) %>%
+  summarize(total = n())
+
+p1 <- ggplot(plot_df, aes(x = missing, y = total)) + 
+  geom_bar(stat = "identity", width = 0.8, fill = "steelblue", color = "gray30") + 
+  ggtitle("Number of missing intensities per protein") +
+  ylab("Number of proteins") +
+  xlab("Number missing") + theme_bw() +
+  theme(axis.text = element_text(size = 13),
+        axis.title = element_text(size = 13),
+        title = element_text(size = 15))
+
+ggsave(plot = p1, filename = "Figures/missing_values_histogram_global_corrected.png")
+
+plot_df <- phospho_missing %>%
+  group_by(missing) %>%
+  summarize(total = n())
+
+p1 <- ggplot(plot_df, aes(x = missing, y = total)) + 
+  geom_bar(stat = "identity", width = 0.8, fill = "steelblue", color = "gray30") + 
+  ggtitle("Number of missing intensities per phospho-site") +
+  ylab("Number of phospho-sites") +
+  xlab("Number missing") + theme_bw() +
+  theme(axis.text = element_text(size = 13),
+        axis.title = element_text(size = 13),
+        title = element_text(size = 15))
+
+ggsave(plot = p1, filename = "Figures/missing_values_histogram_phospho_corrected.png")
+
+data_df <- exprs(m_phospho) %>% as.data.frame() %>% mutate(feature = rownames(exprs(m_phospho)))
+phospho_missing_detailed <- tidyr::pivot_longer(data_df, -feature, values_to = "value", 
+                                                names_to = "Index") %>%
+  merge(pData(m_phospho), by = "Index") %>%
+  mutate(missing = is.na(value)) %>%
+  group_by(Plex, feature) %>%
+  mutate(missing_plex = sum(missing))
+
+table(phospho_missing_detailed$missing, phospho_missing_detailed$Plex)
+
+
+
+```
+
+
+```{r Getting GSEA DB tables}
+t2g_hallmark <- msigdbr(species = "Homo sapiens", category = "H") %>% 
+  dplyr::select(gs_name, gene_symbol)
+
+t2g_humanpheno <- msigdbr(species = "Homo sapiens", category = "C5", subcategory = "HPO") %>% 
+  dplyr::select(gs_name, gene_symbol) %>%
+  mutate(gs_name = gsub("_", " ", gs_name))
+
+t2g_gobp <- msigdbr(species = "Homo sapiens", category = "C5", subcategory = "BP") %>% 
+  dplyr::select(gs_name, gene_symbol) %>%
+  mutate(gs_name = gsub("_", " ", gs_name))
+
+t2g_gocc <- msigdbr(species = "Homo sapiens", category = "C5", subcategory = "CC") %>% 
+  dplyr::select(gs_name, gene_symbol) %>%
+  mutate(gs_name = gsub("_", " ", gs_name))
+
+t2g_gomf <- msigdbr(species = "Homo sapiens", category = "C5", subcategory = "MF") %>% 
+  dplyr::select(gs_name, gene_symbol) %>%
+  mutate(gs_name = gsub("_", " ", gs_name))
+
+t2g_wikipath <- msigdbr(species = "Homo sapiens", category = "C2", subcategory = "WIKIPATHWAYS") %>% 
+  dplyr::select(gs_name, gene_symbol) %>%
+  mutate(gs_name = gsub("_", " ", gs_name))
+
+t2g_pid <- msigdbr(species = "Homo sapiens", category = "C2", subcategory = "PID") %>% 
+  dplyr::select(gs_name, gene_symbol) %>%
+  mutate(gs_name = gsub("_", " ", gs_name))
+
+t2g_reactome <- msigdbr(species = "Homo sapiens", category = "C2", subcategory = "REACTOME") %>% 
+  dplyr::select(gs_name, gene_symbol) %>%
+  mutate(gs_name = gsub("_", " ", gs_name))
+
+t2g_kegg <- msigdbr(species = "Homo sapiens", category = "C2", subcategory = "KEGG") %>% 
+  dplyr::select(gs_name, gene_symbol) %>%
+  mutate(gs_name = gsub("_", " ", gs_name))
+
+t2g_biocarta <- msigdbr(species = "Homo sapiens", category = "C2", subcategory = "BIOCARTA") %>% 
+  dplyr::select(gs_name, gene_symbol) %>%
+  mutate(gs_name = gsub("_", " ", gs_name))
+
+t2g_curatedpath <- msigdbr(species = "Homo sapiens", category = "C2", subcategory = "CP") %>% 
+  dplyr::select(gs_name, gene_symbol) %>%
+  mutate(gs_name = gsub("_", " ", gs_name))
+
+t2g_oncogenic <- msigdbr(species = "Homo sapiens", category = "C6") %>%
+  dplyr::select(gs_name, gene_symbol) %>%
+  mutate(gs_name = gsub("_", " ", gs_name))
+
+t2g_immunesigdb <- msigdbr(species = "Homo sapiens", category = "C7", subcategory = "IMMUNESIGDB") %>%
+  dplyr::select(gs_name, gene_symbol) %>%
+  mutate(gs_name = gsub("_", " ", gs_name))
+
+t2g_immune <- msigdbr(species = "Homo sapiens", category = "C7", ) %>%
+  dplyr::select(gs_name, gene_symbol) %>%
+  mutate(gs_name = gsub("_", " ", gs_name))
+
+```
+
+
+```{r Make GSEA tables + plots eval=FALSE, include=FALSE}
+for (Treatment in c("GD", "GV", "GVD", "G")){
+  
+  ## Global
+  m_early <- m_global[, m_global$comp1_ %in% c(paste0("Early_and_", Treatment), "Parental_and_none")]
+  m_late <- m_global[, m_global$comp1_ %in% c(paste0("Late_and_", Treatment), "Parental_and_none")]
+  
+  contrasts_early = paste0("comp1_Early_and_", Treatment, "-comp1_Parental_and_none")
+  contrasts_late = paste0("comp1_Late_and_", Treatment, "-comp1_Parental_and_none")
+  
+  GSEA_helper(m = m_early, contrasts = contrasts_early,
+              t2g = t2g_gobp, "_gobp")
+  GSEA_helper(m = m_late, contrasts = contrasts_late,
+              t2g = t2g_gobp, "_gobp")
+  
+  GSEA_helper(m = m_early, contrasts = contrasts_early,
+              t2g = t2g_gocc, "_gocc")
+  GSEA_helper(m = m_late, contrasts = contrasts_late,
+              t2g = t2g_gocc, "_gocc")
+  
+  GSEA_helper(m = m_early, contrasts = contrasts_early,
+              t2g = t2g_gomf, "_gomf")
+  GSEA_helper(m = m_late, contrasts = contrasts_late,
+              t2g = t2g_gomf, "_gomf")
+  
+  GSEA_helper(m = m_early, contrasts = contrasts_early,
+              t2g = t2g_pid, "_pid")
+  GSEA_helper(m = m_late, contrasts = contrasts_late,
+              t2g = t2g_pid, "_pid")
+  
+  GSEA_helper(m = m_early, contrasts = contrasts_early,
+              t2g = t2g_reactome, "_reactome")
+  GSEA_helper(m = m_late, contrasts = contrasts_late,
+              t2g = t2g_reactome, "_reactome")
+  
+  GSEA_helper(m = m_early, contrasts = contrasts_early,
+              t2g = t2g_wikipath, "_wikipath")
+  GSEA_helper(m = m_late, contrasts = contrasts_late,
+              t2g = t2g_wikipath, "_wikipath")
+  
+  GSEA_helper(m = m_early, contrasts = contrasts_early,
+              t2g = t2g_biocarta, "_biocarta")
+  GSEA_helper(m = m_late, contrasts = contrasts_late,
+              t2g = t2g_biocarta, "_biocarta")
+  
+}
+
+```
+
+
+```{r Run Diff Exp eval=FALSE, include=FALSE}
+## Differential expression
+for (Treatment in c("GD", "GV", "GVD", "G")){
+  
+  # ## Global
+  # m_early <- m_global[, m_global$comp1_ %in% c(paste0("Early_and_", Treatment), "Parental_and_none")]
+  # m_late <- m_global[, m_global$comp1_ %in% c(paste0("Late_and_", Treatment), "Parental_and_none")]
+  # 
+  # contrasts_early = paste0("comp1_Early_and_", Treatment, "-comp1_Parental_and_none")
+  # contrasts_late = paste0("comp1_Late_and_", Treatment, "-comp1_Parental_and_none")
+  # 
+  # heatmap_helper(m = m_early, contrasts = contrasts_early, 
+  #                plot_title = paste0("Early and ", Treatment, " vs Parental and none - Global"))
+  # heatmap_helper(m = m_late, contrasts = contrasts_late, 
+  #                plot_title = paste0("Late and ", Treatment, " vs Parental and none - Global"))
+  # 
+  # 
+  # ## Phospho
+  # m_early <- m_phospho[, m_phospho$comp1_ %in% c(paste0("Early_and_", Treatment), "Parental_and_none")]
+  # m_late <- m_phospho[, m_phospho$comp1_ %in% c(paste0("Late_and_", Treatment), "Parental_and_none")]
+  # 
+  # contrasts_early = paste0("comp1_Early_and_", Treatment, "-comp1_Parental_and_none")
+  # contrasts_late = paste0("comp1_Late_and_", Treatment, "-comp1_Parental_and_none")
+  # 
+  # heatmap_helper(m = m_early, contrasts = contrasts_early, 
+  #                plot_title = paste0("Early and ", Treatment, " vs Parental and none - Phospho"))
+  # heatmap_helper(m = m_late, contrasts = contrasts_late, 
+  #                plot_title = paste0("Late and ", Treatment, " vs Parental and none - Phospho"))
+  
+  ## Phospho prot
+  m_early <- m_phospho_prot[, m_phospho$comp1_ %in% c(paste0("Early_and_", Treatment), "Parental_and_none")]
+  m_late <- m_phospho_prot[, m_phospho$comp1_ %in% c(paste0("Late_and_", Treatment), "Parental_and_none")]
+  
+  contrasts_early = paste0("comp1_Early_and_", Treatment, "-comp1_Parental_and_none")
+  contrasts_late = paste0("comp1_Late_and_", Treatment, "-comp1_Parental_and_none")
+
+  heatmap_helper(m = m_early, contrasts = contrasts_early, 
+                 plot_title = paste0("Early and ", Treatment, " vs Parental and none - Phospho prot"))
+  heatmap_helper(m = m_late, contrasts = contrasts_late, 
+                 plot_title = paste0("Late and ", Treatment, " vs Parental and none - Phospho prot"))
+}
+
+
+```
+
+
+```{r Summarizing Diff exp}
+combined <- data.frame()
+for (tbl_path  in list.files(pattern = "diffexp_.*.txt")){
+  this_type <- sub("^.*__(.+).txt$", "\\1", tbl_path)
+  xx <- read.table(tbl_path, sep = "\t") %>%
+    mutate(data_type = this_type)
+  combined <- rbind(combined, xx)
+}
+
+combined <- combined %>%
+  filter(welch_adj < 0.05)
+
+## Gives number of significant proteins in group comparison to parental none
+summary_helper <- function(group1, group2 = NA, this_type){
+  if (is.na(group2)){
+    group2 = group1
+  }
+  count_genes <- combined %>%
+    filter(contrast %in% c(group1, group2)) %>%
+    filter(data_type == this_type) %>%
+    group_by(feature) %>%
+    mutate(total = n())
+  
+  return(count_genes)
+}
+
+treatment_G_global <- summary_helper(group1 = "Early_and_G-Parental_and_none", 
+                                     group2 = "Late_and_G-Parental_and_none", this_type = "Global")
+treatment_GD_global <- summary_helper(group1 = "Early_and_GD-Parental_and_none", 
+                                      group2 = "Late_and_GD-Parental_and_none", this_type = "Global")
+treatment_GV_global <- summary_helper(group1 = "Early_and_GV-Parental_and_none", 
+                                      group2 = "Late_and_GV-Parental_and_none", this_type = "Global")
+treatment_GVD_global <- summary_helper(group1 = "Early_and_GVD-Parental_and_none", 
+                                       group2 = "Late_and_GVD-Parental_and_none", this_type = "Global")
+
+
+treatment_G_phospho <- summary_helper(group1 = "Early_and_G-Parental_and_none", 
+                                      group2 = "Late_and_G-Parental_and_none", this_type = "Phospho")
+treatment_GD_phospho <- summary_helper(group1 = "Early_and_GD-Parental_and_none", 
+                                       group2 = "Late_and_GD-Parental_and_none", this_type = "Phospho")
+treatment_GV_phospho <- summary_helper(group1 = "Early_and_GV-Parental_and_none", 
+                                       group2 = "Late_and_GV-Parental_and_none", this_type = "Phospho")
+treatment_GVD_phospho <- summary_helper(group1 = "Early_and_GVD-Parental_and_none", 
+                                        group2 = "Late_and_GVD-Parental_and_none", this_type = "Phospho")
+
+## Number of significant genes in Early, Late, and the overlap
+table(treatment_G_phospho$contrast)
+table(treatment_G_phospho$total)
+
+```
+
+
+## Summary of GSEA
+
+```{r Summarizing GSEA}
+t2g_name <- "reactome"
+plot_path <- paste0("Figures/", "gsea_treatment_state_summary_", t2g_name, ".png")
+plot_title <- paste0("Treatment + State vs Parental")
+combined_gsea <- data.frame()
+for (tbl_path  in list.files(path = "Tables/", pattern = paste0("GSEA_.*_", t2g_name))){
+  this_comparison <- sub("GSEA_(.*)_vs_Parental_and_none_.*", "\\1", tbl_path)
+  xx <- read.table(paste0("Tables/", tbl_path), sep = "\t") %>%
+    mutate(Description = str_wrap(Description, width = 50), 
+           comparison = this_comparison,
+           Treatment = sub("^.*_and_", "", comparison),
+           State = sub("_and_.*$", "", comparison))
+  
+  combined_gsea <- rbind(combined_gsea, xx)
+}
+
+combined_gsea_sig <- combined_gsea %>%
+  filter(p.adjust < 0.05) %>%
+  group_by(Treatment, Description) %>%
+  mutate(total_treat = n(), abs_treat = max(abs(NES))) %>% 
+  ungroup() %>%
+  group_by(State, Description) %>%
+  mutate(total_state = n(), abs_state = max(abs(NES))) %>% ungroup()
+
+state_summary <- combined_gsea_sig %>%
+  filter(total_state > 2) %>%
+  select(Description, State, total_state, abs_state) %>% 
+  unique() %>% arrange(-abs_state) %>%
+  group_by(State) %>%
+  top_n(n = 4, wt = abs_state)
+
+treat_summary <- combined_gsea_sig %>%
+  filter(total_treat > 1) %>%
+  select(Description, Treatment, total_treat, abs_treat) %>% 
+  unique() %>% arrange(-abs_treat) %>%
+  group_by(Treatment) %>%
+  top_n(n = 4, wt = abs_treat)
+
+chosen_terms <- c(treat_summary$Description, state_summary$Description) %>% unique()
+
+mat <- combined_gsea %>%
+  filter(Description %in% chosen_terms) %>%
+  mutate(comp_name = paste(Treatment, State)) %>%
+  select(Description, NES, comp_name) %>%
+  tidyr::pivot_wider(values_from = NES, names_from = comp_name)
+mat.rownames <- mat$Description
+mat <- mat[, -1] %>% as.matrix()
+rownames(mat) <- mat.rownames
+
+mat <- mat[, c("G Early", "G Late", "GD Early", "GD Late", 
+               "GV Early", "GV Late", "GVD Early", "GVD Late")]
+
+mat_pval <- combined_gsea %>%
+  filter(Description %in% chosen_terms) %>%
+  mutate(comp_name = paste(Treatment, State)) %>%
+  select(Description, p.adjust, comp_name) %>%
+  tidyr::pivot_wider(values_from = p.adjust, names_from = comp_name)
+mat_pval <- mat_pval[, -1] %>% as.matrix()
+mat_pval <- mat_pval[, c("G Early", "G Late", "GD Early", "GD Late", 
+                         "GV Early", "GV Late", "GVD Early", "GVD Late")]
+mat_pval[mat_pval < 0.05] <- "*"
+mat_pval[mat_pval >= 0.05] <- ""
+
+ann_col <- data.frame(Treatment = sub(" .+$", "", colnames(mat)),
+                      State = sub("^.+ ", "", colnames(mat)))
+rownames(ann_col) <- colnames(mat)
+ann_colors <- list(`State` = c("Early" = "white", "Late" = "gray30"),
+                   `Treatment` = c("G" = "#FF0000", "GV" = "goldenrod1",
+                                   "GD" = "mediumpurple", "GVD" = "tan3"))
+
+pheatmap(mat, cluster_cols = F, display_numbers = mat_pval, annotation_col = ann_col,
+         annotation_colors = ann_colors, filename = plot_path, width = 10, height = 8,
+         main = plot_title, fontsize_number = 14)
+
+```
+
+
+
+### Prepare KSTAR Inpur
+
+```{r}
+diffexp_phospho_prot_sig <- data.frame()
+combined <- data.frame()
+
+# for (tbl_path  in list.files(path = "Tables/", pattern = "diffexp_.*Phospho_prot.txt", full.names = T)){
+#   xx <- read.table(tbl_path, sep = "\t")
+#   combined <- rbind(combined, xx)
+#   xx <- xx %>%
+#     filter(welch_adj < 0.05) %>%
+#     select(feature, logFC, contrast, welch_adj)
+#   diffexp_phospho_prot_sig <- rbind(diffexp_phospho_prot_sig, xx)
+# }
+
+# write.table(diffexp_phospho_prot_sig, "Tables/diffexp_Phospho_prot_sig.txt", sep = "\t")
+
+for (tbl_path  in list.files(path = "Tables/", pattern = "diffexp_.*Phospho_prot.txt", full.names = T)){
+  xx <- read.table(tbl_path, sep = "\t")
+  combined <- rbind(combined, xx %>% select(feature, logFC, contrast, welch_adj))
+  xx <- xx %>%
+    mutate(logFC = case_when(welch_adj < 0.05 ~ logFC,
+                             welch_adj >= 0.05 ~ 0)) %>%
+    select(feature, logFC, contrast, welch_adj)
+  diffexp_phospho_prot_sig <- rbind(diffexp_phospho_prot_sig, xx)
+}
+
+write.table(diffexp_phospho_prot_sig, "Tables/diffexp_Phospho_prot_all.txt", sep = "\t")
+
+xx <- tidyr::pivot_wider(diffexp_phospho_prot_sig %>% select(-welch_adj), values_from = logFC, names_from = contrast) %>%
+  select(SiteID = feature, everything())
+xx2 <- tidyr::pivot_wider(combined %>% select(-welch_adj), values_from = logFC, names_from = contrast) %>%
+  select(SiteID = feature, everything())
+yy <- read.table("../../proteomics/data/phospho_data/ptrc_ex18_crosstab_phospho_treatments_logFC.txt", sep = "\t") %>%
+  select(SiteID, Peptide_kstar, Protein_kstar) 
+
+
+KSTAR_input <- left_join(xx, yy, by = "SiteID") %>%
+  select(SiteID, Peptide_kstar, Protein_kstar, everything()) 
+KSTAR_input[is.na(KSTAR_input)] <- 0
+colnames(KSTAR_input) <- sub("-", "_vs_", colnames(KSTAR_input))
+colnames(KSTAR_input)[4:11] <- paste0("data:", colnames(KSTAR_input)[4:11])
+
+write.table(KSTAR_input, "Tables/KSTAR_full_input_sigs.txt", sep = "\t")
+
+
+KSTAR_input_full <- left_join(xx2, yy, by = "SiteID") %>%
+  select(SiteID, Peptide_kstar, Protein_kstar, everything()) 
+# KSTAR_input_full[is.na(KSTAR_input_full)] <- 0
+colnames(KSTAR_input_full) <- sub("-", "_vs_", colnames(KSTAR_input_full))
+colnames(KSTAR_input_full)[4:11] <- paste0("data:", colnames(KSTAR_input_full)[4:11])
+
+write.table(KSTAR_input_full, "Tables/KSTAR_full_input.txt", sep = "\t")
+
+
+# xx_rows <- xx$feature
+# xx <- as.matrix(xx %>% select(-feature))
+# rownames(xx) <- xx_rows
+
+```
+
+
+### Summary of KSTAR
+
+```{r Summarzing KSEA}
+library(tidyr)
+library(dplyr)
+library(pheatmap)
+
+
+plot_path <- paste0("Figures/", "kstar_ksdb_treatment_state_summary", ".png")
+plot_title <- paste0("Treatment + State vs Parental")
+
+kstar_results_negative <- read.table("../../KSTAR/KSDB_KSTAR_ST_sigs_kinase_activity_negative1.txt", 
+                                     sep = "\t", header = T) %>%
+  select(Kinase = KSTAR_KINASE, everything()) 
+rownames(kstar_results_negative) <- kstar_results_negative$Kinase
+kstar_results_positive <- read.table("../../KSTAR/KSDB_KSTAR_ST_sigs_kinase_activity_positive1.txt", 
+                                     sep = "\t", header = T) %>%
+  select(Kinase = KSTAR_KINASE, everything()) 
+rownames(kstar_results_positive) <- kstar_results_positive$Kinase
+
+kstar_results <- kstar_results_positive
+for (col in colnames(kstar_results_positive)){
+  if (grepl("^data.*_none$", col)){
+    # kstar_results[col] <- -log10(kstar_results_positive[col]/kstar_results_negative[col])
+    kstar_results[col] <- -(log10(pmax(kstar_results_positive[[col]], 1e-300)) - log10(pmax(kstar_results_negative[[col]], 1e-300)))
+  } else if (grepl("^data.*_fdr$", col)){
+    p_vals_neg <- kstar_results_negative[[col]] #%>%
+      #p.adjust(method = "BH")
+    p_vals_pos <- kstar_results_positive[[col]] #%>%
+      #p.adjust(method = "BH")
+    kstar_results[col] <- pmin(p_vals_neg, p_vals_pos)
+  }
+}
+
+colnames(kstar_results) <- sub("^data.(.*)_vs_.*_none$", "\\1_act", colnames(kstar_results))
+colnames(kstar_results) <- sub("^data.(.*)_vs_.*_fdr$", "\\1_fdr", colnames(kstar_results))
+
+combined_kstar_act <- pivot_longer(kstar_results %>% select(Kinase, ends_with("_act")), 
+                                   -Kinase, values_to = "activity", names_to = "Treatment")
+combined_kstar_fdr <- pivot_longer(kstar_results %>% select(Kinase, ends_with("_fdr")), 
+                                   -Kinase, values_to = "siginificance")
+
+table(combined_kstar_act$Kinase == combined_kstar_fdr$Kinase)
+combined_kstar <- combined_kstar_act
+combined_kstar$p.adjust = combined_kstar_fdr$siginificance
+combined_kstar <- combined_kstar %>%
+  mutate(State = sub("(^.*)_and_.*$", "\\1", Treatment),
+         Treatment = sub("^.*_and_(.+)_.*$", "\\1", Treatment)) %>%
+  arrange(-activity)
+  
+combined_kstar_sig <- combined_kstar %>%
+  filter(p.adjust < 0.05) %>%
+  group_by(Treatment, Kinase) %>%
+  mutate(total_treat = n(), abs_treat = max(abs(activity))) %>% 
+  ungroup() %>%
+  group_by(State, Kinase) %>%
+  mutate(total_state = n(), abs_state = max(abs(activity))) %>% ungroup()
+
+state_summary <- combined_kstar_sig %>%
+  filter(total_state > 2) %>%
+  select(Kinase, State, total_state, abs_state) %>% 
+  unique() %>% arrange(-abs_state) %>%
+  group_by(State) %>%
+  top_n(n = 5, wt = abs_state)
+
+treat_summary <- combined_kstar_sig %>%
+  filter(total_treat > 1) %>%
+  select(Kinase, Treatment, total_treat, abs_treat) %>% 
+  unique() %>% arrange(-abs_treat) %>%
+  group_by(Treatment) %>%
+  top_n(n = 5, wt = abs_treat)
+
+chosen_terms <- c(treat_summary$Kinase, state_summary$Kinase) %>% unique()
+chosen_terms <- c(chosen_terms, "AURKB", "AURKA")
+
+mat <- combined_kstar %>%
+  filter(Kinase %in% chosen_terms) %>%
+  mutate(comp_name = paste(Treatment, State)) %>%
+  select(Kinase, activity, comp_name) %>%
+  tidyr::pivot_wider(values_from = activity, names_from = comp_name)
+mat.rownames <- mat$Kinase
+mat <- mat[, -1] %>% as.matrix()
+rownames(mat) <- mat.rownames
+
+mat <- mat[, c("G Early", "G Late", "GD Early", "GD Late", 
+               "GV Early", "GV Late", "GVD Early", "GVD Late")]
+
+mat_pval <- combined_kstar %>%
+  filter(Kinase %in% chosen_terms) %>%
+  mutate(comp_name = paste(Treatment, State)) %>%
+  select(Kinase, p.adjust, comp_name) %>%
+  tidyr::pivot_wider(values_from = p.adjust, names_from = comp_name)
+mat_pval <- mat_pval[, -1] %>% as.matrix()
+mat_pval <- mat_pval[, c("G Early", "G Late", "GD Early", "GD Late", 
+                         "GV Early", "GV Late", "GVD Early", "GVD Late")]
+mat_pval[mat_pval < 0.05] <- "*"
+mat_pval[mat_pval >= 0.05] <- ""
+
+ann_col <- data.frame(Treatment = sub(" .+$", "", colnames(mat)),
+                      State = sub("^.+ ", "", colnames(mat)))
+rownames(ann_col) <- colnames(mat)
+ann_colors <- list(`State` = c("Early" = "white", "Late" = "gray30"),
+                   `Treatment` = c("G" = "#FF0000", "GV" = "goldenrod1",
+                                   "GD" = "mediumpurple", "GVD" = "tan3"))
+
+color_pal <- rev(RColorBrewer::brewer.pal(n = 9, name = "RdYlBu"))
+color_pal <- c(colorRampPalette(color_pal[1:4])(15), colorRampPalette(color_pal[5:9])(20))
+breaks_buddy <- c(seq(-32, -0.001, length.out = 15), 
+                  0, 
+                  seq(0.001, 32, length.out = 20))
+
+
+pheatmap(mat, cluster_cols = F, display_numbers = mat_pval, annotation_col = ann_col,
+         annotation_colors = ann_colors, filename = plot_path, width = 7, height = 8,
+         main = plot_title, fontsize_number = 14, breaks = breaks_buddy, color = color_pal)
+
+```
+
+
+```{r}
+library(ggplot2)
+
+KSTAR_helper <- function(chosen_Treatment, chosen_State){
+  
+  plot_title <- paste0("KSTAR ", chosen_State, " and ", chosen_Treatment, " vs Parental and none")
+  plot_path <- paste0("KSTAR_", chosen_State, "_and_", chosen_Treatment, "_vs_Parental_and_none.png")
+  
+   
+  group1 <- paste0(chosen_State, "_and_", chosen_Treatment)
+  group2 <- "Parental and none"
+  
+  plot_df <- combined_kstar_sig %>% 
+    filter(Treatment == chosen_Treatment, 
+           State == chosen_State) %>%
+    select(Kinase, Activity = activity) %>%
+    mutate(Group = sign(Activity)) %>%
+    group_by(Group) %>%
+    top_n(n = 10, wt = abs(Activity)) %>%
+    arrange(Activity) %>%
+    mutate(Kinase = factor(Kinase, levels = Kinase),
+           Group = as.factor(Group))
+    
+  p <- ggplot(plot_df, aes(x = Activity, y = Kinase, fill = Group)) + 
+    geom_bar(stat = 'identity', color = "gray30") + 
+    scale_fill_manual(values = c("#619CFF", "#F8766D"), 
+                      labels = c(group2, group1)) + 
+    ggtitle(plot_title) + theme_bw() +
+    theme(axis.text = element_text(size = 16),
+          axis.title = element_text(size = 16),
+          legend.text = element_text(size = 16),
+          title = element_text(size = 16))
+  
+  ggsave(filename = paste0("Figures/", plot_path), plot = p, height = 10, width = 10)
+}
+
+for (chosen_Treatment in c("G", "GD", "GV", "GVD")){
+  for (chosen_State in c("Early", "Late")){
+    KSTAR_helper(chosen_Treatment, chosen_State)
+  }
+}
+
+
+```
+
+
+## Uploading to Synapse
+
+
+```{r}
+source("../util/synapseUtil.R")
+
+## Raw gsea plots
+plot_paths <- list.files(path = "Figures/", pattern = "^GSEA.*$", full.names = T)
+lapply(plot_paths, synapseStore, parentId = "syn44272599")
+
+## gsea summaries
+plot_paths <- list.files(path = "Figures/", pattern = "^gsea_treatment_state_summary.*$", full.names = T)
+lapply(plot_paths, synapseStore, parentId = "syn44272154")
+
+## raw KSTAR plots
+plot_paths <- list.files(path = "Figures/", pattern = "^KSTAR_*", full.names = T)
+lapply(plot_paths, synapseStore, parentId = "syn46598642")
+
+## KSTAR summaries
+plot_paths <- list.files(path = "Figures/", pattern = "^kstar_treatment_state_summary.*$", full.names = T)
+lapply(plot_paths, synapseStore, parentId = "syn44272154")
+
+```
+
+
+```{r}
+source("../../util/synapseUtil.R")
+## gsea tables
+for (t2g_name in c("reactome", "biocarta", "wikipath", "pid", 
+                   "gomf", "gocc", "gobp", "hallmark", "kegg")){
+  combined_gsea <- data.frame()
+  for (tbl_path  in list.files(path = "Tables/", pattern = paste0("GSEA_.*_", t2g_name))){
+    this_comparison <- sub("GSEA_(.*)_vs_Parental_and_none_.*", "\\1", tbl_path)
+    xx <- read.table(paste0("Tables/", tbl_path), sep = "\t") %>%
+      mutate(Description = str_wrap(Description, width = 50), 
+             comparison = this_comparison,
+             Treatment = sub("^.*_and_", "", comparison),
+             State = sub("_and_.*$", "", comparison))
+    
+    combined_gsea <- rbind(combined_gsea, xx)
+  }
+  
+  combined_gsea <- combined_gsea %>%
+    select(Description, NES, pvalue, p.adjust, comparison, core_enrichment) %>%
+    mutate(comparison = paste(comparison, "vs Parental"),
+           DB = t2g_name)
+  
+  if (t2g_name %in% c("reactome", "biocarta", "kegg", "gobp", "gomf", "gocc", "pid")){
+    t2g_name_pattern <- paste(t2g_name, "")
+    combined_gsea <- combined_gsea %>%
+      mutate(Description = sub(t2g_name_pattern, "", Description, ignore.case = T))
+  } else if (t2g_name == "hallmark"){
+    combined_gsea <- combined_gsea %>%
+      mutate(Description = sub("hallmark_", "", Description, ignore.case = T))
+  } else {
+    combined_gsea <- combined_gsea %>%
+      mutate(Description = sub("WP ", "", Description, ignore.case = T))
+  }
+           
+  
+  tbl_path <- paste0("Tables/treatment_state_vs_parental_gsea_", t2g_name, ".xlsx")
+  openxlsx::write.xlsx(combined_gsea, file = tbl_path, sep = "\t", quote = F)
+  synapseStore(tbl_path, "syn44272255")
+}
+
+
+
+
+```
+
+
+
+
+

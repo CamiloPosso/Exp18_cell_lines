@@ -1,0 +1,179 @@
+---
+title: "Ex18 KSTAR Network prune input"
+output: html_document
+---
+
+Comparing across Early, Late. Comparing to G treatment by state.
+
+
+```{r include=FALSE}
+library(dplyr)
+library(tidyr)
+
+
+prob_cutoff <- 0.05
+
+KSTAR_compendia <- read.table("KSTAR_HUMAN_COMPENDIA.txt", header = T) %>% mutate(acc_site = paste(KSTAR_ACCESSION, KSTAR_SITE, sep = "--"))
+
+KSDB <- read.csv(system.file('PSP&NetworKIN_Kinase_Substrate_Dataset_July2016.csv',
+                             package='amlresistancenetworks'),stringsAsFactors = FALSE) %>%
+  mutate(acc_site = paste(SUB_ACC_ID, SUB_MOD_RSD, sep = "--"))
+conversion_table <- KSDB %>%
+  select(Symbol = SUB_GENE, Uniprot = SUB_ACC_ID) %>%
+  filter(Uniprot != "?",
+         Symbol != "") %>%
+  unique()
+
+max_score <- KSDB %>% filter(networkin_score != Inf) %>% pull(networkin_score) %>% max()
+
+network_df <- KSDB %>% select(Kinase = GENE, Protein = SUB_ACC_ID, Symbol = SUB_GENE, 
+                              Site = SUB_MOD_RSD, score = networkin_score, Source, acc_site) %>%
+  merge(conversion_table, by = "Symbol") %>%
+  mutate(Protein = case_when(Protein == "?" ~ Uniprot,
+                             TRUE ~ Protein),
+         sanity = Protein == Uniprot,
+         acc_site = paste(Protein, Site, sep = "--")) %>%
+  filter(acc_site %in% KSTAR_compendia$acc_site) %>%
+  # filter(!grepl("Y", acc_site)) %>%
+  mutate(prob = pmin(score/max_score, 1)) %>%
+  filter(prob > prob_cutoff)
+
+network_df <- network_df %>%
+  select(Protein, Site, Kinase, prob) %>%
+  unique() %>%
+  dplyr::rename(substrate_acc = Protein, site = Site) %>%
+  arrange(Kinase) # %>%
+  # group_by(Protein, Site, Kinase) %>%
+  # mutate(count = n()) # %>% ungroup()
+
+kinase_count <- network_df %>%
+  group_by(Kinase) %>%
+  summarize(count = n())
+
+selected_kinases <- kinase_count %>% filter(count >= 3)
+
+network_mat <- pivot_wider(network_df %>% filter(Kinase %in% selected_kinases$Kinase), values_from = "prob", names_from = "Kinase", values_fill = 0)
+
+write.table(network_mat, "KSDB_prob.05_prune_input_for_KSTAR.txt", sep = "\t")
+
+
+```
+
+
+
+
+```{r}
+KSTAR_compendia <- read.table("KSTAR_HUMAN_COMPENDIA.txt", header = T) %>% mutate(acc_site = paste(KSTAR_ACCESSION, KSTAR_SITE, sep = "--"))
+
+KSDB <- read.csv(system.file('PSP&NetworKIN_Kinase_Substrate_Dataset_July2016.csv',
+                             package='amlresistancenetworks'),stringsAsFactors = FALSE) %>%
+  mutate(acc_site = paste(SUB_ACC_ID, SUB_MOD_RSD, sep = "--"))
+conversion_table <- KSDB %>%
+  select(Symbol = SUB_GENE, Uniprot = SUB_ACC_ID) %>%
+  filter(Uniprot != "?",
+         Symbol != "") %>%
+  unique()
+
+max_score <- KSDB %>% filter(networkin_score != Inf) %>% pull(networkin_score) %>% max()
+
+network_df <- KSDB %>% select(Kinase = GENE, Protein = SUB_ACC_ID, Symbol = SUB_GENE, 
+                              Site = SUB_MOD_RSD, score = networkin_score, Source, acc_site) %>%
+  merge(conversion_table, by = "Symbol") %>%
+  mutate(Protein = case_when(Protein == "?" ~ Uniprot,
+                             TRUE ~ Protein),
+         sanity = Protein == Uniprot) %>%
+  filter(acc_site %in% KSTAR_compendia$acc_site) %>%
+  # filter(!grepl("Y", acc_site)) %>%
+  mutate(prob = pmin(score/max_score, 1)) %>%
+  filter(prob >= 1)
+
+network_df <- network_df %>%
+  select(Protein, Site, Kinase, prob) %>%
+  unique() %>%
+  dplyr::rename(substrate_acc = Protein, site = Site) %>%
+  arrange(Kinase) # %>%
+  # group_by(Protein, Site, Kinase) %>%
+  # mutate(count = n()) # %>% ungroup()
+
+kinase_count <- network_df %>%
+  group_by(Kinase) %>%
+  summarize(count = n())
+
+selected_kinases <- kinase_count %>% filter(count >= 3)
+
+network_mat <- pivot_wider(network_df %>% filter(Kinase %in% selected_kinases$Kinase), values_from = "prob", names_from = "Kinase", values_fill = 0)
+
+write.table(network_mat, "KSDB_prune_input_for_KSTAR.txt", sep = "\t")
+
+
+```
+
+
+
+
+
+
+
+
+
+
+
+
+
+
+
+```{r}
+xx <- read.table("KSTAR_mapped_dataset.txt", sep = "\t", header = T) %>% 
+  mutate(name = paste(KSTAR_ACCESSION, KSTAR_SITE, sep = "-"))
+sites <- xx %>% select(KSTAR_ACCESSION, KSTAR_SITE, data.Late_and_G_vs_Parental_and_none, name) %>%
+  filter(data.Late_and_G_vs_Parental_and_none < 0)
+
+AURKB_sites <- network_df %>% filter(Kinase == "AURKB") %>%
+  mutate(name = paste(substrate_acc, site, sep = "-")) %>% pull(name)
+
+
+table(AURKB_sites %in% sites$name)
+which(AURKB_sites %in% sites$name)
+
+```
+
+
+
+
+
+
+```{r}
+
+yy <- read.csv("PRUNED NETWORKS/PhosphoPICK/PhosphoPICK_2020-02-26_all_matrix.csv", stringsAsFactors = FALSE)
+zz <- read.csv("PRUNED NETWORKS/PhosphoPICK/NetworKIN_2020-02-26_all_matrix.csv", stringsAsFactors = FALSE)
+
+kinases <- colnames(yy)[6:ncol(yy)]
+kinases_kin <- colnames(zz)[6:ncol(zz)]
+
+sum(grepl("-", yy[["ABL1"]]))
+sum(grepl("-", zz[["ABL1"]]))
+
+for (kinase in kinases_kin){
+  print(sum(grepl("-", zz[[kinase]])))
+}
+
+
+zz %>% filter(substrate_acc == "Q9UIS9",
+              site == "T587") %>%
+  select(MAP2K7, ABL1) %>% View()
+
+```
+
+
+
+
+
+
+
+
+
+
+
+
+
+

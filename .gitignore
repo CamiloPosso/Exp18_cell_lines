@@ -43,9 +43,34 @@ vignettes/*.pdf
 .Renviron
 
 # Figures and tables
-treatments_vs_parental/Figures
-treatments_vs_parental/Tables
-treatments_vs_parental/old
+comparisons/1_treatment_and_state_vs_parental_summary/Figures
+comparisons/1_treatment_and_state_vs_parental_summary/old
+comparisons/1_treatment_and_state_vs_parental_summary/Tables
+comparisons/2_similarities_across_state/*.txt
+comparisons/2_similarities_across_state/*.png
+comparisons/3_functional_diffsim_treatments/*.txt
+comparisons/3_functional_diffsim_treatments/*.xlsx
+comparisons/3_functional_diffsim_treatments/*.pptx
+comparisons/3_functional_diffsim_treatments/*.png
+comparisons/4_states_combined_functional_diffsim_treatments/rsconnect
+comparisons/4_states_combined_functional_diffsim_treatments/*.txt
+comparisons/4_states_combined_functional_diffsim_treatments/*.xlsx
+comparisons/4.5_exp12_combined_states_combined_functional_diffsim_treatments/rsconnect
+comparisons/4.5_exp12_combined_states_combined_functional_diffsim_treatments/*.txt
+comparisons/4.5_exp12_combined_states_combined_functional_diffsim_treatments/*.xlsx
+comparisons/app_functional_diffsim_shiny/functional_data
+comparisons/app_functional_diffsim_shiny/pathway_heatmap_data
+comparisons/app_functional_diffsim_shiny/rsconnect
+
+KSTAR/*.txt
+KSTAR/backup
+KSTAR/MAPPED_DATA
+KSTAR/NETWORKS
+KSTAR/PRUNED NETWORKS
+KSTAR/RESULTS
+KSTAR/*.log
 
 # Powerpoints
 ppts
+
+*.txt

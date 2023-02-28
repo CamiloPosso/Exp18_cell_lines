@@ -1,0 +1,224 @@
+---
+title: "4. Combined states GSEA comparisons"
+output: html_document
+---
+
+Preliminary summary
+
+
+
+
+```{r include=FALSE}
+source("../../helper_scripts.R")
+
+library(ggplot2)
+library(readxl)
+library(pheatmap)
+library(msigdbr)
+library(stringr)
+
+global_crosstab <- read.table("../../proteomics/data/global_data/exp_12_18_combined_global_corrected.txt", sep = "\t")
+phospho_crosstab <- read.table("../../proteomics/data/phospho_data/exp_12_18_combined_phospho_corrected.txt", sep = "\t")
+meta <- read.table("../../proteomics/data/exp_12_18_combined_metadata.txt", sep = "\t")
+rownames(meta) <- meta$Sample
+
+m_global <- MSnSet(exprs = global_crosstab %>% as.matrix(), 
+                   pData = meta[colnames(global_crosstab), ])
+
+m_phospho <- MSnSet(exprs = phospho_crosstab %>% as.matrix(),
+                    pData = meta[colnames(phospho_crosstab), ])
+
+pData(m_global) <- pData(m_global) %>%
+  mutate(Treatment_cs = case_when(Treatment != "G" ~ Treatment,
+                                  TRUE ~ paste(Treatment, State, sep = "_")))
+pData(m_phospho) <- pData(m_phospho) %>%
+  mutate(Treatment_cs = case_when(Treatment != "G" ~ Treatment,
+                                  TRUE ~ paste(Treatment, State, sep = "_")))
+
+```
+
+
+
+```{r Getting GSEA DB tables}
+t2g_hallmark <- msigdbr(species = "Homo sapiens", category = "H") %>% 
+  dplyr::select(gs_name, gene_symbol)
+
+t2g_gobp <- msigdbr(species = "Homo sapiens", category = "C5", subcategory = "BP") %>% 
+  dplyr::select(gs_name, gene_symbol) %>%
+  mutate(gs_name = gsub("_", " ", gs_name))
+
+t2g_reactome <- msigdbr(species = "Homo sapiens", category = "C2", subcategory = "REACTOME") %>% 
+  dplyr::select(gs_name, gene_symbol) %>%
+  mutate(gs_name = gsub("_", " ", gs_name))
+
+t2g_kegg <- msigdbr(species = "Homo sapiens", category = "C2", subcategory = "KEGG") %>% 
+  dplyr::select(gs_name, gene_symbol) %>%
+  mutate(gs_name = gsub("_", " ", gs_name))
+
+```
+
+
+```{r}
+pathway_shiny_df <- rbind(t2g_gobp, t2g_hallmark, t2g_kegg, t2g_reactome) %>%
+  select(Pathway = gs_name, Feature = gene_symbol)
+
+KSDB <- read.csv(system.file('PSP&NetworKIN_Kinase_Substrate_Dataset_July2016.csv',
+                             package='amlresistancenetworks'),stringsAsFactors = FALSE) %>%
+  filter(networkin_score > 5) %>%
+  select(Pathway = GENE, SUB_GENE, SUB_MOD_RSD) %>%
+  mutate(phosphosite = sub("(^[A-Z]{1})[0-9]+", "\\1", SUB_MOD_RSD),
+         phosphosite = tolower(phosphosite),
+         Feature = paste(SUB_GENE, SUB_MOD_RSD, sep = "-"),
+         Feature = paste0(Feature, phosphosite)) %>%
+  select(Pathway, Feature)
+
+pathway_shiny_df <- rbind(pathway_shiny_df, KSDB)
+  
+pathway_shiny_df <- pathway_shiny_df %>%  
+  group_by(Pathway) %>%
+  summarize(Features = paste(Feature, collapse = ", "),
+            total = n()) %>%
+  ungroup()
+
+# write.table(x = pathway_shiny_df, 
+#             file = "../app_functional_diffsim_shiny/pathway_heatmap_data/pathway_features.txt", 
+#             sep = "\t", quote = F)
+
+saveRDS(pathway_shiny_df, file = "../app_functional_diffsim_shiny/pathway_heatmap_data/pathway_features.RDS")
+
+```
+
+
+```{r Extra msigs, eval=FALSE, include=FALSE}
+
+t2g_humanpheno <- msigdbr(species = "Homo sapiens", category = "C5", subcategory = "HPO") %>% 
+  dplyr::select(gs_name, gene_symbol) %>%
+  mutate(gs_name = gsub("_", " ", gs_name))
+
+t2g_gocc <- msigdbr(species = "Homo sapiens", category = "C5", subcategory = "CC") %>% 
+  dplyr::select(gs_name, gene_symbol) %>%
+  mutate(gs_name = gsub("_", " ", gs_name))
+
+t2g_gomf <- msigdbr(species = "Homo sapiens", category = "C5", subcategory = "MF") %>% 
+  dplyr::select(gs_name, gene_symbol) %>%
+  mutate(gs_name = gsub("_", " ", gs_name))
+
+t2g_wikipath <- msigdbr(species = "Homo sapiens", category = "C2", subcategory = "WIKIPATHWAYS") %>% 
+  dplyr::select(gs_name, gene_symbol) %>%
+  mutate(gs_name = gsub("_", " ", gs_name))
+
+t2g_pid <- msigdbr(species = "Homo sapiens", category = "C2", subcategory = "PID") %>% 
+  dplyr::select(gs_name, gene_symbol) %>%
+  mutate(gs_name = gsub("_", " ", gs_name))
+
+
+
+t2g_biocarta <- msigdbr(species = "Homo sapiens", category = "C2", subcategory = "BIOCARTA") %>% 
+  dplyr::select(gs_name, gene_symbol) %>%
+  mutate(gs_name = gsub("_", " ", gs_name))
+
+t2g_curatedpath <- msigdbr(species = "Homo sapiens", category = "C2", subcategory = "CP") %>% 
+  dplyr::select(gs_name, gene_symbol) %>%
+  mutate(gs_name = gsub("_", " ", gs_name))
+
+t2g_oncogenic <- msigdbr(species = "Homo sapiens", category = "C6") %>%
+  dplyr::select(gs_name, gene_symbol) %>%
+  mutate(gs_name = gsub("_", " ", gs_name))
+
+t2g_immunesigdb <- msigdbr(species = "Homo sapiens", category = "C7", subcategory = "IMMUNESIGDB") %>%
+  dplyr::select(gs_name, gene_symbol) %>%
+  mutate(gs_name = gsub("_", " ", gs_name))
+
+t2g_immune <- msigdbr(species = "Homo sapiens", category = "C7", ) %>%
+  dplyr::select(gs_name, gene_symbol) %>%
+  mutate(gs_name = gsub("_", " ", gs_name))
+
+```
+
+
+```{r}
+contrasts <- c()
+for (Treatment in c("GD", "GV", "GVD", "G_Early", "G_Late")){
+  contrasts_new = paste0("Treatment_cs", Treatment, "-Treatment_csnone")
+  # contrasts_new = paste0(Treatment, "-none")
+  contrasts <- c(contrasts, contrasts_new)
+
+}
+
+```
+
+
+```{r}
+GSEA_helper(m_global, contrasts, t2g_hallmark, "Hallmark", "Treatment_cs")
+GSEA_helper(m_global, contrasts, t2g_reactome, "Reactome", "Treatment_cs")
+GSEA_helper(m_global, contrasts, t2g_kegg, "KEGG", "Treatment_cs")
+GSEA_helper(m_global, contrasts, t2g_gobp, "GOBP", "Treatment_cs")
+
+```
+
+
+```{r}
+KSEA_helper(m_phospho, contrasts, "Treatment_cs")
+
+```
+
+
+
+```{r Combining enrichment tables}
+all_combined_gsea <- data.frame()
+for (file in list.files(pattern = "^GSEA_.+_combined.txt$")){
+  print(file)
+  DB = sub("(^.+_.+)_.+$", "\\1", file) %>%
+    gsub("_", " ", .)
+  xx <- read.table(file, sep = "\t") %>%
+    mutate(DB = DB) %>%
+    select(Pathway = Description, enrichment = NES, p.adjust, contrast, DB) %>%
+    mutate(Treatment = sub("^Treatment_cs(.+)-Treatment_csnone", "\\1", contrast))
+  all_combined_gsea <- rbind(all_combined_gsea, xx)
+  print(ncol(xx))
+}
+
+write.table(all_combined_gsea, "GSEA_combined.txt", quote = F, sep = "\t")
+
+all_combined_ksea <- data.frame()
+for (file in list.files(pattern = "^KSEA_.+_combined.txt$")){
+  print(file)
+  DB = sub("(^.+_.+)_.+$", "\\1", file) %>%
+    gsub("_", " ", .)
+  xx <- read.table(file, sep = "\t") %>%
+    mutate(DB = DB) %>%
+    select(Pathway = pathway, enrichment, p.adjust = adj_p_val, contrast, DB) %>%
+    mutate(Treatment = sub("^Treatment_cs(.+)-Treatment_csnone", "\\1", contrast))
+  all_combined_ksea <- rbind(all_combined_ksea, xx)
+  print(ncol(xx))
+}
+
+write.table(all_combined_ksea, "KSEA_combined.txt", quote = F, sep = "\t")
+write.table(rbind(all_combined_gsea, all_combined_ksea), "enrichment_combined.txt", quote = F, sep = "\t")
+
+```
+
+
+
+```{r}
+mutation_df <- data.frame(mutation = c("PCH10", "RNF31", "SEC16A", "PIK3R4", "BIRC6", "ATP2A3", "F691L"), 
+                          Treatment = rep("GV", 7)) %>%
+  rbind(data.frame(mutation = c("PCH10", "RNF31", "SEC16A", "NRAS G12S"), 
+                   Treatment = rep("GD", 4))) %>%
+  rbind(data.frame(mutation = c("PIK3R4", "BIRC6", "ATP2A3", "RNF31", "SEC16A"), 
+                   Treatment = rep("GVD", 5)),
+        data.frame(mutation = c("dummy"), 
+                   Treatment = rep("G", 1))) %>%
+  mutate(value = 1) %>%
+  tidyr::pivot_wider(names_from = "mutation", values_from = "value", values_fill = 0) %>% as.data.frame()
+rownames(mutation_df) <- mutation_df$Treatment
+mutation_df <- mutation_df %>% select(-Treatment, -dummy)
+mutations <- colnames(mutation_df)
+
+write.table(mutation_df, sep = "\t", file = "../../proteomics/data/mutation_treatment_df.txt", quote = F)
+
+
+```
+
+
+

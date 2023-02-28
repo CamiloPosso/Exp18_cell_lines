@@ -1,0 +1,383 @@
+
+---
+title: "Ex18 GSEA + KSEA summary plots"
+output: html_document
+---
+
+Preliminary summary
+
+
+
+
+```{r include=FALSE}
+source("../../helper_scripts.R")
+
+library(ggplot2)
+library(readxl)
+library(pheatmap)
+library(msigdbr)
+library(stringr)
+
+global_crosstab <- read.table("../../proteomics/data/global_data/ptrc_ex18_crosstab_global_gene_corrected.txt")
+phospho_crosstab <- read.table("../../proteomics/data/phospho_data/ptrc_ex18_crosstab_phospho_siteID_corrected.txt")
+phospho_prot_crosstab <- read.table("../../proteomics/data/phospho_data/ptrc_ex18_crosstab_phospho_SiteID_prot_corrected.txt")
+meta <- read_excel("../../proteomics/data/Exp18_metadata_01-14-2021.xlsx") %>%
+  filter(!is.na(Index)) %>%
+  mutate(Index = as.character(Index),
+         Plex = as.character(Plex),
+         comp1_ = paste(State, Treatment, sep = "_and_")) %>% as.data.frame()
+rownames(meta) <- meta$Index
+
+colnames(global_crosstab) <- sub("^X", "", colnames(global_crosstab))
+colnames(phospho_crosstab) <- sub("^X", "", colnames(phospho_crosstab))
+colnames(phospho_prot_crosstab) <- sub("^data.", "", colnames(phospho_prot_crosstab))
+
+
+m_global <- MSnSet(exprs = global_crosstab %>% as.matrix(), 
+                   pData = meta[colnames(global_crosstab), ])
+
+m_phospho <- MSnSet(exprs = phospho_crosstab %>% as.matrix(), 
+                    pData = meta[colnames(phospho_crosstab), ])
+
+```
+
+
+## KSEA summary plot
+
+
+```{r}
+combined_ksea <- read.table("KSEA_NetworKIN_5_combined.txt", sep = "\t") %>%
+  select(Kinase = pathway, p.adjust = adj_p_val, activity = enrichment, everything())
+
+combined_ksea <- combined_ksea %>%
+  mutate(contrast = gsub("comp1_", "", contrast),
+         Treatment = gsub("-Parental_and_none", "", contrast),
+         State = sub("(^.*)_and_.*$", "\\1", Treatment),
+         Treatment = sub("^.*_and_(.+)$", "\\1", Treatment))
+  
+combined_kstar_sig <- combined_ksea %>%
+  filter(p.adjust < 0.05) %>%
+  group_by(Treatment, Kinase) %>%
+  mutate(total_treat = n(), abs_treat = max(abs(activity))) %>% 
+  ungroup() %>%
+  group_by(State, Kinase) %>%
+  mutate(total_state = n(), abs_state = max(abs(activity))) %>% ungroup()
+
+state_summary <- combined_kstar_sig %>%
+  filter(total_state > 2) %>%
+  select(Kinase, State, total_state, abs_state) %>% 
+  unique() %>% arrange(-abs_state) %>%
+  group_by(State) %>%
+  top_n(n = 5, wt = abs_state)
+
+treat_summary <- combined_kstar_sig %>%
+  filter(total_treat > 1) %>%
+  select(Kinase, Treatment, total_treat, abs_treat) %>% 
+  unique() %>% arrange(-abs_treat) %>%
+  group_by(Treatment) %>%
+  top_n(n = 5, wt = abs_treat)
+
+chosen_terms <- c(treat_summary$Kinase, state_summary$Kinase) %>% unique()
+chosen_terms <- c(chosen_terms, "AURKB", "AURKA")
+
+mat <- combined_ksea %>%
+  filter(Kinase %in% chosen_terms) %>%
+  mutate(comp_name = paste(Treatment, State)) %>%
+  select(Kinase, activity, comp_name) %>%
+  tidyr::pivot_wider(values_from = activity, names_from = comp_name)
+mat.rownames <- mat$Kinase
+mat <- mat[, -1] %>% as.matrix()
+rownames(mat) <- mat.rownames
+
+mat <- mat[, c("G Early", "G Late", "GD Early", "GD Late", 
+               "GV Early", "GV Late", "GVD Early", "GVD Late")]
+
+mat_pval <- combined_ksea %>%
+  filter(Kinase %in% chosen_terms) %>%
+  mutate(comp_name = paste(Treatment, State)) %>%
+  select(Kinase, p.adjust, comp_name) %>%
+  tidyr::pivot_wider(values_from = p.adjust, names_from = comp_name)
+mat_pval <- mat_pval[, -1] %>% as.matrix()
+mat_pval <- mat_pval[, c("G Early", "G Late", "GD Early", "GD Late", 
+                         "GV Early", "GV Late", "GVD Early", "GVD Late")]
+mat_pval[mat_pval < 0.05] <- "*"
+mat_pval[mat_pval >= 0.05] <- ""
+
+ann_col <- data.frame(Treatment = sub(" .+$", "", colnames(mat)),
+                      State = sub("^.+ ", "", colnames(mat)))
+rownames(ann_col) <- colnames(mat)
+ann_colors <- list(`State` = c("Early" = "white", "Late" = "gray30"),
+                   `Treatment` = c("G" = "#FF0000", "GV" = "goldenrod1",
+                                   "GD" = "mediumpurple", "GVD" = "tan3"))
+
+color_pal <- rev(RColorBrewer::brewer.pal(n = 9, name = "RdYlBu"))
+color_pal <- c(colorRampPalette(color_pal[1:4])(15), colorRampPalette(color_pal[5:9])(20))
+breaks_buddy <- c(seq(-7, -0.001, length.out = 15), 
+                  0, 
+                  seq(0.001, 7, length.out = 20))
+
+
+pheatmap(mat, cluster_cols = F, display_numbers = mat_pval, annotation_col = ann_col,
+         annotation_colors = ann_colors, filename = "ksea_treatment_state_summary_NetworKIN_5.png", width = 7, height = 8,
+         main = "Treatment + State vs Parental", fontsize_number = 14, breaks = breaks_buddy, color = color_pal)
+
+```
+
+
+## Single treatment to combo summary figure. 
+
+
+```{r}
+## Phospho
+
+for (chosen_state in c("Early", "Late")){
+  for (chosen_treatment in c("D", "V")){
+    if (chosen_treatment == "D"){
+        plot_title_s <- "Decitabine combinations "
+      } else {
+        plot_title_s <- "Venetoclax combinations "
+      }
+    treatments <- c("G", paste0("G", chosen_treatment), "GVD")
+    other_treatment <- setdiff(c("D", "V"), chosen_treatment)
+    
+    xx <- read.table("KSEA_NetworKIN_5_combined.txt", sep = "\t") %>%
+      select(Kinase = pathway, p.adjust = adj_p_val, activity = enrichment, everything())
+    
+    combined_ksea <- xx %>%
+      mutate(contrast = gsub("comp1_", "", contrast),
+             Treatment = gsub("-Parental_and_none", "", contrast),
+             State = sub("(^.*)_and_.*$", "\\1", Treatment),
+             Treatment = sub("^.*_and_(.+)$", "\\1", Treatment),
+             Treatment = case_when(Treatment == "GV_or_GVD" ~ "V_stand-in",
+                                   Treatment == "GD_or_GVD" ~ "D_stand-in",
+                                   TRUE ~ Treatment))
+    
+    ## These are kinases which show matching significant activity in both GVD and
+    ## the G in combo with the excluded treatment.
+    excluded_results <- combined_ksea %>%
+      filter(Treatment %in% c(paste0("G", other_treatment), "GVD"),
+             State == chosen_state,
+             p.adjust < 0.05) %>%
+      mutate(ID = paste(Kinase, State)) %>%
+      group_by(Kinase) %>%
+      mutate(total = n()) %>%
+      filter(total == 2) %>%
+      mutate(sign = sign(prod(activity))) %>%
+      filter(sign == 1) %>%
+      ungroup() %>%
+      filter(Treatment == "GVD")
+    
+    combined_ksea_s <- combined_ksea %>%
+      filter(p.adjust < 0.05,
+             State == chosen_state,
+             Treatment %in% c(paste0("G", chosen_treatment), "GVD")) %>%
+      unique() %>% arrange(-p.adjust) %>% group_by(Kinase) %>% 
+      mutate(total = n(), sign = sign(prod(activity))) %>% ungroup() %>%
+      mutate(plot_group = case_when(total == 1 ~ "diff",
+                                    total == 2 & sign < 0 ~ "diff",
+                                    TRUE ~ "sim"))
+    
+    chosen_terms_diff <- combined_ksea_s %>%
+      mutate(ID = paste(Kinase, State)) %>%
+      filter(plot_group == "diff",
+             !ID %in% excluded_results$ID) %>%
+      group_by(Treatment) %>% top_n(n = 6, wt = -p.adjust) %>% 
+      pull(Kinase) %>% c(., "AURKB", "CDC7") %>% unique()
+    
+    chosen_terms_sim <- combined_ksea_s %>% 
+      mutate(ID = paste(Kinase, State)) %>%
+      filter(plot_group == "sim",
+             !ID %in% excluded_results$ID) %>%
+      group_by(Treatment) %>% top_n(n = 6, wt = -p.adjust) %>% 
+      pull(Kinase) %>% c(., "AURKB", "CDC7") %>% unique()
+    
+    for (chosen_terms in c("sim", "diff")){
+      if (chosen_terms == "diff"){
+        chosen_terms <- chosen_terms_diff
+        plot_path <- paste0("ksea_", chosen_treatment, "_combinations_", chosen_state, "_differences.png")
+        plot_title <- paste0(plot_title_s, chosen_state, "  ---  differences")
+      } else {
+        chosen_terms <- chosen_terms_sim
+        plot_path <- paste0("ksea_", chosen_treatment, "_combinations_", chosen_state, "_similarities.png")
+        plot_title <- paste0(plot_title_s, chosen_state, "  ---  similarities")
+      }
+      
+      mat_treatments <- c(treatments, setdiff(c("GV", "GD"), paste0("G", chosen_treatment)))
+      mat <- combined_ksea %>%
+        filter(Kinase %in% chosen_terms) %>%
+        mutate(comp_name = paste(Treatment, State)) %>%
+        select(Kinase, activity, comp_name) %>%
+        tidyr::pivot_wider(values_from = activity, names_from = comp_name)
+      mat.rownames <- mat$Kinase
+      mat <- mat[, -1] %>% as.matrix()
+      rownames(mat) <- mat.rownames
+      
+      mat <- mat[, paste(mat_treatments, chosen_state)]
+      
+      mat_pval <- combined_ksea %>%
+        filter(Kinase %in% chosen_terms) %>%
+        mutate(comp_name = paste(Treatment, State)) %>%
+        select(Kinase, p.adjust, comp_name) %>%
+        tidyr::pivot_wider(values_from = p.adjust, names_from = comp_name)
+      mat_pval <- mat_pval[, -1] %>% as.matrix()
+      mat_pval <- mat_pval[, paste(mat_treatments, chosen_state)]
+      mat_pval[mat_pval < 0.05] <- "*"
+      mat_pval[mat_pval >= 0.05] <- ""
+      
+      ann_col <- data.frame(Treatment = sub(" .+$", "", colnames(mat)),
+                            State = sub("^.+ ", "", colnames(mat)))
+      rownames(ann_col) <- colnames(mat)
+      ann_colors <- list(`State` = c("Early" = "white", "Late" = "gray30"),
+                         `Treatment` = c("G" = "#FF0000", "GV" = "goldenrod1", "GVD" = "tan3", "GD" = "mediumpurple",
+                                         "V_stand-in" = "cyan4", "D_stand-in" = "chartreuse4"))
+      
+      color_pal <- rev(RColorBrewer::brewer.pal(n = 9, name = "RdYlBu"))
+      color_pal <- c(colorRampPalette(color_pal[1:4])(15), colorRampPalette(color_pal[5:9])(20))
+      breaks_buddy <- c(seq(-7, -0.001, length.out = 15), 
+                        0, 
+                        seq(0.001, 7, length.out = 20))
+      
+      pheatmap(mat, cluster_cols = F, display_numbers = mat_pval, annotation_col = ann_col,
+               annotation_colors = ann_colors, filename = plot_path, width = 7, height = 8,
+               main = plot_title, fontsize_number = 14, breaks = breaks_buddy, color = color_pal)
+    }
+  }
+}
+
+```
+
+
+```{r}
+## Global
+
+for (t2g_name in c("Hallmark", "KEGG", "GOBP", "Reactome")){
+  for (chosen_state in c("Early", "Late")){
+    for (chosen_treatment in c("D", "V")){
+      if (chosen_treatment == "D"){
+        plot_title_s <- "Decitabine combinations "
+      } else {
+        plot_title_s <- "Venetoclax combinations "
+      }
+      treatments <- c("G", paste0("G", chosen_treatment), "GVD")
+      other_treatment <- setdiff(c("D", "V"), chosen_treatment)
+      
+      xx <- read.table(paste0("GSEA_", t2g_name, "_combined.txt"), sep = "\t") %>%
+        select(Pathway = Description, activity = NES, everything())
+  
+      combined_gsea <- xx %>%
+        mutate(contrast = gsub("comp1_", "", contrast),
+               Treatment = gsub("-Parental_and_none", "", contrast),
+               State = sub("(^.*)_and_.*$", "\\1", Treatment),
+               Treatment = sub("^.*_and_(.+)$", "\\1", Treatment),
+               Treatment = case_when(Treatment == "GV_or_GVD" ~ "V_stand-in",
+                                     Treatment == "GD_or_GVD" ~ "D_stand-in",
+                                     TRUE ~ Treatment),
+               Pathway = gsub("_", " ", Pathway),
+               Pathway = str_wrap(Pathway, width = 40))
+      
+      ## These are kinases which show matching significant activity in both GVD and
+      ## the combo G with the excluded treatment.
+      excluded_results <- combined_gsea %>%
+        filter(Treatment %in% c(paste0("G", other_treatment), "GVD"),
+               State == chosen_state,
+               p.adjust < 0.05) %>%
+        mutate(ID = paste(Pathway, State)) %>%
+        group_by(Pathway) %>%
+        mutate(total = n()) %>%
+        filter(total == 2) %>%
+        mutate(sign = sign(prod(activity))) %>%
+        filter(sign == 1) %>%
+        ungroup() %>%
+        filter(Treatment == "GVD")
+      
+      combined_gsea_s <- combined_gsea %>%
+        filter(p.adjust < 0.05,
+               State == chosen_state,
+               Treatment %in% c(paste0("G", chosen_treatment), "GVD")) %>%
+        unique() %>% arrange(-p.adjust) %>% group_by(Pathway) %>% 
+        mutate(total = n(), sign = sign(prod(activity))) %>% ungroup() %>%
+        mutate(plot_group = case_when(total == 1 ~ "diff",
+                                      total == 2 & sign < 0 ~ "diff",
+                                      TRUE ~ "sim"))
+      
+      chosen_terms_diff <- combined_gsea_s %>%
+        mutate(ID = paste(Pathway, State)) %>%
+        filter(plot_group == "diff",
+               !ID %in% excluded_results$ID) %>%
+        group_by(Treatment) %>% top_n(n = 8, wt = -p.adjust) %>% 
+        pull(Pathway) %>% unique()
+      
+      chosen_terms_sim <- combined_gsea_s %>% 
+        mutate(ID = paste(Pathway, State)) %>%
+        filter(plot_group == "sim",
+               !ID %in% excluded_results$ID) %>%
+        group_by(Treatment) %>% top_n(n = 8, wt = -p.adjust) %>% 
+        pull(Pathway) %>% unique()
+      
+      for (chosen_terms in c("sim", "diff")){
+        if (chosen_terms == "diff"){
+          chosen_terms <- chosen_terms_diff
+          plot_path <- paste0("gsea_", t2g_name, "_", chosen_treatment, "_combinations_", chosen_state, "_differences.png")
+          plot_title <- paste0(plot_title_s, chosen_state, "  ---  differences ")
+        } else {
+          chosen_terms <- chosen_terms_sim
+          plot_path <- paste0("gsea_", t2g_name, "_", chosen_treatment, "_combinations_", chosen_state, "_similarties.png")
+          plot_title <- paste0(plot_title_s, chosen_state, "  ---  similarities ")
+        }
+        
+        if (length(chosen_terms) >= 2){
+          mat_treatments <- c(treatments, setdiff(c("GV", "GD"), paste0("G", chosen_treatment)))
+          mat <- combined_gsea %>%
+            filter(Pathway %in% chosen_terms) %>%
+            mutate(comp_name = paste(Treatment, State)) %>%
+            select(Pathway, activity, comp_name) %>%
+            tidyr::pivot_wider(values_from = activity, names_from = comp_name)
+          mat.rownames <- mat$Pathway
+          mat <- mat[, -1] %>% as.matrix()
+          rownames(mat) <- mat.rownames
+          
+          mat <- mat[, paste(mat_treatments, chosen_state)]
+          
+          mat_pval <- combined_gsea %>%
+            filter(Pathway %in% chosen_terms) %>%
+            mutate(comp_name = paste(Treatment, State)) %>%
+            select(Pathway, p.adjust, comp_name) %>%
+            tidyr::pivot_wider(values_from = p.adjust, names_from = comp_name)
+          mat_pval <- mat_pval[, -1] %>% as.matrix()
+          mat_pval <- mat_pval[, paste(mat_treatments, chosen_state)]
+          mat_pval[mat_pval < 0.05] <- "*"
+          mat_pval[mat_pval >= 0.05] <- ""
+          
+          ann_col <- data.frame(Treatment = sub(" .+$", "", colnames(mat)),
+                                State = sub("^.+ ", "", colnames(mat)))
+          rownames(ann_col) <- colnames(mat)
+          ann_colors <- list(`State` = c("Early" = "white", "Late" = "gray30"),
+                             `Treatment` = c("G" = "#FF0000", "GV" = "goldenrod1", 
+                                             "GVD" = "tan3", "GD" = "mediumpurple"))
+          
+          color_pal <- rev(RColorBrewer::brewer.pal(n = 9, name = "RdYlBu"))
+          color_pal <- c(colorRampPalette(color_pal[1:4])(15), colorRampPalette(color_pal[5:9])(20))
+          breaks_buddy <- c(seq(-2.5, -0.001, length.out = 15), 
+                            0, 
+                            seq(0.001, 2.5, length.out = 20))
+          
+          pheatmap(mat, cluster_cols = F, display_numbers = mat_pval, annotation_col = ann_col,
+                   annotation_colors = ann_colors, filename = plot_path, width = 10, height = 8,
+                   main = plot_title, fontsize_number = 12.5, breaks = breaks_buddy, color = color_pal,
+                   fontsize_row = 8.5)
+        }
+      }
+    }
+  }
+}
+
+```
+
+
+
+
+
+
+
+
+

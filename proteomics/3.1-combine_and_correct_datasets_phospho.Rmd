@@ -1,0 +1,228 @@
+---
+title: "Ex18 Combining datasets (Global)"
+output: html_document
+---
+
+
+
+
+```{r include=FALSE}
+library(MSnSet.utils)
+library(dplyr)
+library(ggplot2)
+library(readxl)
+
+source("../util/synapseUtil.R")
+syn <- synapseLogin()
+
+```
+
+
+## Ex 18 data setup
+
+
+```{r}
+phospho_crosstab <- read.table("data/phospho_data/ptrc_ex18_crosstab_phospho_siteID_original.txt", sep = "\t")
+colnames(phospho_crosstab) <- sub("^X", "", colnames(phospho_crosstab))
+
+meta <- read_excel("../proteomics/data/Exp18_metadata_01-14-2021.xlsx") %>%
+  filter(!is.na(Index)) %>%
+  mutate(Index = as.character(Index),
+         Plex = paste0("Ex18_", as.character(Plex)),
+         Sample = paste0("Ex18_Sample_", Index)) %>% as.data.frame()
+rownames(meta) <- meta$Index
+meta <- meta[colnames(phospho_crosstab), ]
+colnames(phospho_crosstab) <- meta$Sample
+rownames(meta) <- meta$Sample
+
+m_ex18 <- MSnSet(exprs = as.matrix(phospho_crosstab), pData = meta)
+plot_pca(m_ex18, "Plex")
+
+```
+
+
+### Missing data
+
+
+```{r}
+peptide_missing <- rowSums(is.na(phospho_crosstab))
+hist(peptide_missing)
+
+```
+
+## Ex 12 data setup
+
+```{r}
+ex_12 <- read.table(syn$get("syn22136309")$path, sep = "\t", header = T)
+ex_12_peptide_df <- ex_12 %>% select(Site = site, Gene, Protein, Peptide) %>% unique() %>%
+  group_by(Site) %>%
+  mutate(total = n()) %>%
+  ungroup()
+ex_12 <- ex_12 %>%
+  select(-Protein, -Gene, -Peptide) %>%
+  unique()
+ex_12_avg <- ex_12 %>%
+  tidyr::pivot_longer(-site, names_to = "Sample", values_to = "value") %>%
+  filter(!is.na(value),
+         site != "") %>%
+  tidyr::pivot_wider(names_from = "Sample", values_from = "value", values_fn = "mean") %>%
+  as.data.frame()
+ex_12_avg <- ex_12_avg[, colnames(ex_12)]
+ex_12_rownames <- ex_12_avg$site
+ex_12_avg <- ex_12_avg %>% select(-site)
+rownames(ex_12_avg) <- ex_12_rownames
+
+## Plex 1 and 2 contain MOLM14, while Plex 3 and 4 contain MV411. So select only 1 and 2 here.
+meta_ex12 <- read_excel("data/LabelingMetadata_exp12.xlsx", sheet = "Sheet1") %>%
+  mutate(sample = paste0("Sample_", `Sample ID`),
+         Sample = paste0("Ex12_", sample),
+         Plex = paste0("Ex12_", as.character(Plex)),
+         state = sub("(^[A-Z,a-z]+) .*$", "\\1", `Sample Info`),
+         State = case_when(state == "parental" ~ "Parental",
+                           TRUE ~ state),
+         Treatment = case_when(State == "Parental" ~ "none",
+                               TRUE ~ "G"),
+         Ligand = case_when(State == "Parental" ~ "none",
+                            TRUE ~ sub("^.*, ([A-Z,0-9]+)$", "\\1", `Sample Info`))) %>%
+  head(40) %>% as.data.frame()
+rownames(meta_ex12) <- meta_ex12$sample
+meta_ex12 <- meta_ex12[colnames(ex_12_avg), ]
+colnames(ex_12_avg) <- meta_ex12$Sample
+rownames(meta_ex12) <- meta_ex12$Sample
+
+ex_12_avg <- ex_12_avg[, meta_ex12 %>% filter(Plex %in% c("Ex12_1", "Ex12_2")) %>% pull(Sample)]
+
+m_ex12 <- MSnSet(exprs = as.matrix(ex_12_avg), 
+                 pData = meta_ex12[colnames(ex_12_avg), ])
+
+plot_pca(m_ex12, "Plex")
+
+```
+
+### Missing data
+
+```{r}
+phospho_ex12_missing <- rowSums(is.na(ex_12_avg))
+hist(phospho_ex12_missing)
+
+```
+
+
+
+
+Now we take the sites which appear in each experiment and intersect to find a common
+set of identified sites.
+
+
+```{r}
+common_identified_sites <- intersect(rownames(ex_12_avg), rownames(phospho_crosstab))
+
+phospho_crosstab <- phospho_crosstab[common_identified_sites, ]
+phospho_crosstab_ex12 <- ex_12_avg[common_identified_sites, ]
+
+meta_combined <- rbind(meta %>% select(Sample, Plex, State, Treatment, Ligand), 
+                       meta_ex12 %>% filter(Plex %in% c("Ex12_1", "Ex12_2")) %>% select(Sample, Plex, State, Treatment, Ligand)) %>%
+  mutate(Exp = sub("_[0-9]$", "", Plex))
+
+```
+
+
+## Raw data stats
+
+
+```{r}
+phospho_crosstab <- sweep(phospho_crosstab, 2, apply(phospho_crosstab, 2, median, na.rm = T), FUN = '-')
+phospho_crosstab_ex12 <- sweep(phospho_crosstab_ex12, 2, apply(phospho_crosstab_ex12, 2, median, na.rm = T), FUN = '-')
+
+```
+
+The distribtuion in each dataset is varied, even though we have similar cell lines.
+So, we will normalize using a single mean and standard deviation for each dataset, 
+independent of peptides, batches, etc, to better compare the two datasets. 
+
+
+```{r}
+hist(as.matrix(phospho_crosstab), main = "Ex18 data distribution")
+hist(as.matrix(phospho_crosstab_ex12), main = "Ex12 data distribution")
+
+```
+
+
+```{r}
+ex18_median <- median(as.matrix(phospho_crosstab), na.rm = T)
+ex18_sd <- sd(as.matrix(phospho_crosstab), na.rm = T)
+ex12_median <- median(as.matrix(phospho_crosstab_ex12), na.rm = T)
+ex12_sd <- sd(as.matrix(phospho_crosstab_ex12), na.rm = T)
+
+crosstab_ex18 <- phospho_crosstab
+crosstab_ex12 <- phospho_crosstab_ex12
+
+crosstab_ex18_norm <- (phospho_crosstab - ex18_median)/ex18_sd
+crosstab_ex12_norm <- (phospho_crosstab_ex12 - ex12_median)/ex12_sd
+
+```
+
+
+## Combining the data 
+
+
+### Normalized first, combined then corrected.
+
+
+```{r}
+crosstab_combined_norm <- cbind(crosstab_ex18_norm, crosstab_ex12_norm)
+crosstab_combined_norm <- sweep(crosstab_combined_norm, 1, 
+                                apply(crosstab_combined_norm, 1, median, na.rm = T), FUN = '-')
+
+## Missing data 
+combined_missing <- rowSums(is.na(crosstab_combined_norm))
+crosstab_combined_norm <- crosstab_combined_norm[combined_missing < 30, ]
+
+m <- MSnSet(exprs = as.matrix(crosstab_combined_norm), pData = meta_combined)
+m_corrected <- correct_batch_effect_NA(m, batch_name = "Plex", par.prior = TRUE)
+# m_corrected_rollup <- rrollup(m_corrected, rollBy = "Gene", rollFun = '-')
+
+plot_pca(m, "Plex")
+# plot_pca(m, "Plex", components = c(3,4))
+plot_pca(m_corrected, "Plex")
+# plot_pca(m_corrected, "Plex", components = c(3,4))
+plot_pca(m_corrected, "Treatment")
+# plot_pca(m_corrected, "Treatment", components = c(3,4))
+
+
+```
+
+
+### Combined (not normalized) then corrected
+
+
+```{r}
+crosstab_combined <- cbind(crosstab_ex18, crosstab_ex12)
+crosstab_combined <- sweep(crosstab_combined, 1, 
+                           apply(crosstab_combined, 1, median, na.rm = T), FUN = '-')
+
+## Missing data 
+combined_missing <- rowSums(is.na(crosstab_combined))
+crosstab_combined <- crosstab_combined[combined_missing < 30, ]
+
+m <- MSnSet(exprs = as.matrix(crosstab_combined), pData = meta_combined)
+m_corrected <- correct_batch_effect_NA(m, batch_name = "Plex", par.prior = TRUE)
+# m_corrected_rollup <- rrollup(m_corrected, rollBy = "Gene", rollFun = '-')
+
+plot_pca(m, "Plex")
+# plot_pca(m, "Plex", components = c(3,4))
+plot_pca(m_corrected, "Plex")
+# plot_pca(m_corrected, "Plex", components = c(3,4))
+plot_pca(m_corrected, "Treatment")
+# plot_pca(m_corrected, "Treatment", components = c(3,4))
+
+## Using this one!
+write.table(exprs(m_corrected), sep = "\t", file = "data/phospho_data/exp_12_18_combined_phospho_corrected.txt", quote = F)
+# write.table(pData(m_corrected_rollup), sep = "\t", file = "data/exp_12_18_combined_metadata.txt", quote = F)
+
+```
+
+```{r}
+
+
+```
