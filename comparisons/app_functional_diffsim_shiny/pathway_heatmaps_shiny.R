@@ -22,6 +22,7 @@ plot_function <- function(enrichment_df, pathway, mat, cluster_cols, meta_df, ..
   # n_treat <- length(treatments)
   
   mat <- mat[intersect(genes, rownames(mat)), ]
+  mat <- sweep(mat, 1, apply(mat, 1, mean, na.rm = T), FUN = '-')
   ann_col <- meta_df %>%
     select(Treatment, State)
   cat_colors1 <- c("darkorange2", "firebrick2", "mediumpurple", "dodgerblue3", "darkolivegreen4")

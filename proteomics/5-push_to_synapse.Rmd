@@ -27,5 +27,31 @@ for (i in seq_along(synapse_id_map)) {
 ```
 
 
+## Exp 12 + exp 18
+
+
+```{r}
+metadata <- read.table("../proteomics/data/exp_12_18_combined_metadata.txt", sep = "\t")
+
+crosstab <- read.table("../proteomics/data/global_data/exp_12_18_combined_global_corrected.txt", sep = "\t")
+crosstab_long <- crosstab %>%
+  mutate(Gene = rownames(.)) %>%
+  tidyr::pivot_longer(-Gene, names_to = "Sample", values_to = "value") %>%
+  merge(metadata, by = "Sample")
+
+write.table(crosstab_long, "../proteomics/data/global_data/exp_12_18_combined_global_corrected_long.txt", quote = F, sep = "\t")
+synapseStore(path = "../proteomics/data/global_data/exp_12_18_combined_global_corrected_long.txt", parentId = "syn43185649")
+
+crosstab <- read.table("../proteomics/data/phospho_data/exp_12_18_combined_phospho_corrected.txt", sep = "\t")
+crosstab_long <- crosstab %>%
+  mutate(SiteID = rownames(.)) %>%
+  tidyr::pivot_longer(-SiteID, names_to = "Sample", values_to = "value") %>%
+  merge(metadata, by = "Sample")
+
+write.table(crosstab_long, "../proteomics/data/phospho_data/exp_12_18_combined_phospho_corrected_long.txt", quote = F, sep = "\t")
+synapseStore(path = "../proteomics/data/phospho_data/exp_12_18_combined_phospho_corrected_long.txt", parentId = "syn43185649")
+
+
+```
 
 

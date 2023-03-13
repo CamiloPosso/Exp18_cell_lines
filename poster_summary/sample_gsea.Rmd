@@ -1,0 +1,381 @@
+---
+title: "4. Combined states GSEA comparisons"
+output: html_document
+---
+
+Preliminary summary
+
+
+
+
+```{r include=FALSE}
+source("../helper_scripts.R")
+
+library(ggplot2)
+library(readxl)
+library(pheatmap)
+library(msigdbr)
+library(stringr)
+
+global_crosstab <- read.table("../proteomics/data/global_data/exp_12_18_combined_global_corrected.txt", sep = "\t")
+phospho_crosstab <- read.table("../proteomics/data/phospho_data/exp_12_18_combined_phospho_corrected.txt", sep = "\t")
+meta <- read.table("../proteomics/data/exp_12_18_combined_metadata.txt", sep = "\t")
+rownames(meta) <- meta$Sample
+
+m_global <- MSnSet(exprs = global_crosstab %>% as.matrix(), 
+                   pData = meta[colnames(global_crosstab), ])
+
+m_phospho <- MSnSet(exprs = phospho_crosstab %>% as.matrix(),
+                    pData = meta[colnames(phospho_crosstab), ])
+
+## cs = combining state
+pData(m_global) <- pData(m_global) %>%
+  mutate(Treatment_cs = case_when(Treatment != "G" ~ Treatment,
+                                  TRUE ~ paste(Treatment, State, sep = "_")))
+pData(m_phospho) <- pData(m_phospho) %>%
+  mutate(Treatment_cs = case_when(Treatment != "G" ~ Treatment,
+                                  TRUE ~ paste(Treatment, State, sep = "_")))
+
+```
+
+
+```{r Getting GSEA DB tables}
+t2g_hallmark <- msigdbr(species = "Homo sapiens", category = "H") %>% 
+  dplyr::select(gs_name, gene_symbol)
+
+t2g_gobp <- msigdbr(species = "Homo sapiens", category = "C5", subcategory = "BP") %>% 
+  dplyr::select(gs_name, gene_symbol) %>%
+  mutate(gs_name = gsub("_", " ", gs_name))
+
+t2g_reactome <- msigdbr(species = "Homo sapiens", category = "C2", subcategory = "REACTOME") %>% 
+  dplyr::select(gs_name, gene_symbol) %>%
+  mutate(gs_name = gsub("_", " ", gs_name))
+
+t2g_kegg <- msigdbr(species = "Homo sapiens", category = "C2", subcategory = "KEGG") %>% 
+  dplyr::select(gs_name, gene_symbol) %>%
+  mutate(gs_name = gsub("_", " ", gs_name))
+
+KSDB <- read.csv(system.file('PSP&NetworKIN_Kinase_Substrate_Dataset_July2016.csv',
+                             package='amlresistancenetworks'), stringsAsFactors = FALSE)
+
+t2g_phospho <- KSDB %>%
+  mutate(gs_name = GENE, gene_symbol = paste(SUB_GENE, SUB_MOD_RSD, sep = "-")) %>%
+  select(gs_name, gene_symbol)
+
+```
+
+
+## Doing GSEA (order based) on the PCA components of global.
+
+
+```{r}
+t2gs <- list(t2g_gobp, t2g_hallmark, t2g_kegg, t2g_reactome)
+names(t2gs) <- c("gobp", "hallmark", "kegg", "reactome")
+
+p <- plot_pca(m_global, "Treatment", shape = "State", save_dfs = "m_global_components", z_score = T, princomp_center = T) + 
+  ggtitle("PCA of global") + theme(text = element_text(size = 18))
+
+ggsave(plot = p, filename = "pca_global_combined_datasets.png", width = 8, height = 6)
+
+functional_enrichment_of_PCA <- data.frame()
+
+for (t2g_name in names(t2gs)){
+  print(t2g_name)
+  t2g <- t2gs[[t2g_name]]
+  gsea_input <- m_global_components[["feature_decomposition"]]$PC1
+  names(gsea_input) <- m_global_components[["feature_decomposition"]] %>% rownames()
+  
+  sorted_input <- sort(gsea_input, decreasing = T)
+  functional_enrichment_of_PCA_db <- GSEA(sorted_input, eps = 1e-16, minGSSize = 10, 
+                     pvalueCutoff = 1, TERM2GENE = t2g)@result %>%
+    dplyr::select(Description, setSize, NES, pvalue, p.adjust, core_enrichment) %>%
+    mutate(Component = "PC1", DB = t2g_name)
+  functional_enrichment_of_PCA <- rbind(functional_enrichment_of_PCA, functional_enrichment_of_PCA_db)
+  
+  gsea_input <- m_global_components[["feature_decomposition"]]$PC2
+  names(gsea_input) <- m_global_components[["feature_decomposition"]] %>% rownames()
+  
+  sorted_input <- sort(gsea_input, decreasing = T)
+  functional_enrichment_of_PCA_db <- GSEA(sorted_input, eps = 1e-16, minGSSize = 10, 
+                     pvalueCutoff = 1, TERM2GENE = t2g)@result %>%
+    dplyr::select(Description, setSize, NES, pvalue, p.adjust, core_enrichment) %>%
+    mutate(Component = "PC2", DB = t2g_name)
+  functional_enrichment_of_PCA <- rbind(functional_enrichment_of_PCA, functional_enrichment_of_PCA_db)
+}
+
+```
+
+
+## Doing KSEA (mean based) on the PCA components of phospho.
+
+
+```{r}
+p <- plot_pca(m_phospho, "Treatment", shape = "State", save_dfs = "m_phospho_components", z_score = T, princomp_center = T) + 
+  ggtitle("PCA of phospho") + theme(text = element_text(size = 18))
+
+ggsave(plot = p, filename = "pca_phospho_combined_datasets.png", width = 8, height = 6)
+
+ksea_input <- m_phospho_components[["feature_decomposition"]]$PC1
+names(ksea_input) <- m_phospho_components[["feature_decomposition"]] %>% rownames()
+ksea_input <- 2**ksea_input
+
+PX <- data.frame(Protein = "NULL", Gene = names(ksea_input), Peptide = "NULL", 
+                 Residue.Both = names(ksea_input), p = "NULL", FC = ksea_input) %>%
+  dplyr::mutate(Residue.Both = sub("^.*-", "", Residue.Both)) %>%
+  dplyr::mutate(Residue.Both = gsub("[a-z]", ";", Residue.Both)) %>%
+  dplyr::mutate(Residue.Both = gsub(";$", "", Residue.Both),
+                Gene = sub("^(.*)-.*$", "\\1", Gene))
+
+ksea_res <- KSEA.Scores(KSDB, PX, NetworKIN = TRUE, NetworKIN.cutoff = 5) %>%
+  dplyr::select(Kinase.Gene, m, FDR, z.score) %>%
+  dplyr::rename(pathway = Kinase.Gene, enrichment = z.score,
+                adj_p_val = FDR, set_size = m) %>%
+  filter(set_size >= 3) %>%
+  mutate(DB = "KSEA NetworKIN_5", component = "PC1")
+
+ksea_input <- m_phospho_components[["feature_decomposition"]]$PC2
+names(ksea_input) <- m_phospho_components[["feature_decomposition"]] %>% rownames()
+ksea_input <- 2**ksea_input
+
+PX <- data.frame(Protein = "NULL", Gene = names(ksea_input), Peptide = "NULL", 
+                 Residue.Both = names(ksea_input), p = "NULL", FC = ksea_input) %>%
+  dplyr::mutate(Residue.Both = sub("^.*-", "", Residue.Both)) %>%
+  dplyr::mutate(Residue.Both = gsub("[a-z]", ";", Residue.Both)) %>%
+  dplyr::mutate(Residue.Both = gsub(";$", "", Residue.Both),
+                Gene = sub("^(.*)-.*$", "\\1", Gene))
+
+ksea_res <- KSEA.Scores(KSDB, PX, NetworKIN = TRUE, NetworKIN.cutoff = 5) %>%
+  dplyr::select(Kinase.Gene, m, FDR, z.score) %>%
+  dplyr::rename(pathway = Kinase.Gene, enrichment = z.score,
+                adj_p_val = FDR, set_size = m) %>%
+  filter(set_size >= 3) %>%
+  mutate(DB = "KSEA NetworKIN_5", component = "PC2") %>% rbind(ksea_res)
+
+ksea_enrichment_of_PCA <- ksea_res
+
+```
+
+
+## Samplewise enrichment (GSEA)
+
+
+```{r}
+samplewise_gsea <- function(m, t2g, table_name = "", normalize = TRUE){
+  if (normalize){
+    print("centering rows, then columns")
+    exprs(m) <- sweep(exprs(m), 1, apply(exprs(m), 1, mean, na.rm = T), FUN = '-')
+    exprs(m) <- sweep(exprs(m), 2, apply(exprs(m), 2, mean, na.rm = T), FUN = '-')
+  }
+  
+  samples <- pData(m) %>%
+    pull(Sample)
+  
+  sample_gsea <- data.frame()
+  
+  for (x_sample in samples){
+    print(x_sample)
+    gsea_input <- exprs(m)[, x_sample]
+    sorted_input <-  sort(gsea_input, decreasing = T)
+    
+    gsea_res <- GSEA(sorted_input, eps = 1e-16, minGSSize = 10, 
+                     pvalueCutoff = 1, TERM2GENE = t2g)@result %>%
+        dplyr::select(Description, setSize, NES, pvalue, p.adjust, core_enrichment) %>%
+        dplyr::mutate(Sample = x_sample)
+    sample_gsea <- rbind(sample_gsea, gsea_res)
+  }
+  write.table(sample_gsea, paste0("sample_gsea_", table_name, ".txt"), sep = "\t", quote = F)
+  return(sample_gsea)
+}
+
+
+m <- m_global
+t2gs <- list(t2g_gobp, t2g_hallmark, t2g_kegg,t2g_reactome)
+names(t2gs) <- c("gobp", "hallmark", "kegg", "reactome")
+
+
+for (t2g_name in names(t2gs)){
+  t2g <- t2gs[[t2g_name]]
+  samplewise_gsea(m, t2g, t2g_name)
+}
+
+```
+
+
+## Samplewise enrichment (KSEA)
+
+
+```{r}
+
+m <- m_phospho
+
+samplewise_ksea <- function(m){
+  exprs(m) <- sweep(exprs(m), 1, apply(exprs(m), 1, mean, na.rm = T), FUN = '-')
+  exprs(m) <- sweep(exprs(m), 2, apply(exprs(m), 2, mean, na.rm = T), FUN = '-')
+  sample_ksea <- data.frame()
+  
+  samples <- pData(m) %>%
+      # filter(get(treatment_var) != control_group) %>% 
+      pull(Sample)
+  
+  for (x_sample in samples){
+    print(x_sample)
+  
+    samples <- pData(m) %>%
+      pull(Sample)
+    ksea_input <- exprs(m)[, x_sample]
+    names(ksea_input) <- exprs(m) %>% rownames()
+    ksea_input <- 2**ksea_input
+    
+    PX <- data.frame(Protein = "NULL", Gene = names(ksea_input), Peptide = "NULL", 
+                     Residue.Both = names(ksea_input), p = "NULL", FC = ksea_input) %>%
+      dplyr::mutate(Residue.Both = sub("^.*-", "", Residue.Both)) %>%
+      dplyr::mutate(Residue.Both = gsub("[a-z]", ";", Residue.Both)) %>%
+      dplyr::mutate(Residue.Both = gsub(";$", "", Residue.Both),
+                    Gene = sub("^(.*)-.*$", "\\1", Gene))
+    
+    ksea_res <- KSEA.Scores(KSDB, PX, NetworKIN = TRUE, NetworKIN.cutoff = 5) %>%
+      dplyr::select(Kinase.Gene, m, FDR, z.score) %>%
+      dplyr::rename(pathway = Kinase.Gene, enrichment = z.score,
+                    adj_p_val = FDR, set_size = m) %>%
+      filter(set_size >= 3) %>%
+      mutate(Sample = x_sample)
+    sample_ksea <- rbind(sample_ksea, ksea_res)
+  }
+  
+  write.table(sample_ksea, "sample_ksea_psp_networkin5.txt", sep = "\t", quote = F)
+}
+
+samplewise_ksea(m)
+
+```
+
+
+## helper function to plot functional PCA and get arrows of most significance
+
+
+```{r}
+functional_pca_helper <- function(sample_gsea, group_gsea, gsea_meta, arrow_pathways = NULL, top_n = 8){
+  chosen_pathways <- group_gsea %>% filter(p.adjust < 0.05) %>% pull(Pathway) %>% unique()
+
+  group_gsea <- group_gsea %>%
+    mutate(Sample = gsub("Treatment_cs(.*)-.*$", "\\1", contrast))
+  
+  combined <- sample_gsea %>% 
+    select(Pathway, Sample, enrichment) %>% 
+    filter(Pathway %in% chosen_pathways)
+  
+  xx <- tidyr::pivot_wider(combined %>% select(Pathway, Sample, enrichment), names_from = "Sample", values_from = "enrichment") %>% as.matrix()
+  rownames(xx) <- xx[, 1]
+  xx <- xx[, -1]
+  yy <- matrix(as.numeric(xx), ncol = ncol(xx))
+  rownames(yy) <- rownames(xx) 
+  
+  
+  m_gsea <- MSnSet(exprs = yy, pData = gsea_meta[colnames(xx), ])
+  plot_colors <- c("#A3A500", "#F8766D", "#00BF7D", "#00B0F6", "#E76BF3")
+  
+  p <- plot_pca(m_gsea, "Treatment", z_score = F, standardize = T, shape = "State",
+                save_dfs = "PCA_of_functional_enrichment") + ggtitle("PCA of GSEA enrichment") 
+  
+  # x_components <- PCA_of_functional_enrichment$feature_decomposition %>% 
+  #   mutate(sgn_1 = sign(PC1),
+  #          abs_1 = abs(PC1),
+  #          Pathway = rownames(.)) %>%
+  #   group_by(sgn_1) %>%
+  #   top_n(10, abs_1)
+  # 
+  # y_components <- PCA_of_functional_enrichment$feature_decomposition %>% 
+  #   mutate(sgn_2 = sign(PC2),
+  #          abs_2 = abs(PC2),
+  #          Pathway = rownames(.)) %>%
+  #   group_by(sgn_2) %>%
+  #   top_n(10, abs_2)
+  
+  # components <- rbind(x_components, y_components) %>% ungroup() %>% 
+  #   select(Pathway, PC1, PC2)
+  
+  arrow_df <- PCA_of_functional_enrichment$feature_decomposition %>%
+    mutate(arrow_len = sqrt(PC1**2 + PC2**2),
+           Pathway = rownames(.),
+           label_name = Pathway)
+  if (is.null(arrow_pathways)){
+    arrow_df <- arrow_df %>%
+      arrange(-arrow_len) %>% head(top_n) %>%
+      select(x_c = PC1, y_c = PC2, label_name, Pathway)
+  } else {
+    arrow_df <- arrow_df %>%
+      filter(Pathway %in% arrow_pathways) %>%
+      select(x_c = PC1, y_c = PC2, label_name, Pathway)
+  }
+  
+  confirm_pca_og <- group_gsea %>%
+    filter(Pathway %in% arrow_df$Pathway, 
+           p.adjust < 0.05) %>% select(Pathway, enrichment, p.adjust, Treatment) %>%
+    left_join(arrow_df, by = "Pathway")
+  
+  q <- arrow_plotter(arrow_df, top_n)
+  return(list("PCA" = p, "Arrows" = q, "consistency" = confirm_pca_og))
+}
+
+```
+
+
+## Making functional PCA plots and arrow plots, checking consistency of the results from PCA.
+
+
+```{r}
+## GSEA
+
+DB_name = "reactome"
+sample_gsea <- read.table(paste0("sample_gsea_", DB_name, ".txt"), sep = "\t") %>%
+  mutate(Pathway = sub("REACTOME ", "", Description),
+         Pathway = str_wrap(Pathway, width = 50),
+         enrichment = NES)
+group_gsea <- read.table("../comparisons/4.5_exp12_combined_states_combined_functional_diffsim_treatments/GSEA_combined.txt", sep = "\t") %>%
+  filter(DB == "GSEA Reactome") %>%
+  mutate(Pathway = sub("REACTOME ", "", Pathway),
+         Pathway = str_wrap(Pathway, width = 50))
+  
+gsea_meta <- pData(m_global) %>% select(Sample, Treatment = Treatment, State)
+rownames(gsea_meta) <- gsea_meta$Sample
+
+output <- functional_pca_helper(sample_gsea, group_gsea, gsea_meta)
+
+
+
+## KSEA
+
+sample_ksea <- read.table("sample_ksea_psp_networkin5.txt", sep = "\t") %>% mutate(Pathway = pathway)
+group_ksea <- read.table("../comparisons/4.5_exp12_combined_states_combined_functional_diffsim_treatments/KSEA_combined.txt", sep = "\t")
+
+ksea_meta <- pData(m_phospho) %>% select(Sample, Treatment = Treatment, State)
+rownames(ksea_meta) <- ksea_meta$Sample
+
+output <- functional_pca_helper(sample_ksea, group_ksea, ksea_meta)
+
+m <- m_phospho
+ksea_input <- apply(exprs(m[, m$Treatment_cs == "G_Late"]), 1, mean, na.rm = T) - apply(exprs(m[, m$Treatment_cs == "G_Early"]), 1, mean, na.rm = T)
+names(ksea_input) <- exprs(m) %>% rownames()
+
+ksea_input <- 2**ksea_input
+
+PX <- data.frame(Protein = "NULL", Gene = names(ksea_input), Peptide = "NULL", 
+                 Residue.Both = names(ksea_input), p = "NULL", FC = ksea_input) %>%
+  dplyr::mutate(Residue.Both = sub("^.*-", "", Residue.Both)) %>%
+  dplyr::mutate(Residue.Both = gsub("[a-z]", ";", Residue.Both)) %>%
+  dplyr::mutate(Residue.Both = gsub(";$", "", Residue.Both),
+                Gene = sub("^(.*)-.*$", "\\1", Gene))
+
+## PRKG1, MAPKAPK5, MAPKAPK3, MAPK8, MAPKAPK2 all show more G_late activity than G_early, consistent with functional PCA.
+testing_ <- KSEA.Scores(KSDB, PX, NetworKIN = TRUE, NetworKIN.cutoff = 5) %>%
+  dplyr::select(Kinase.Gene, m, FDR, z.score) %>%
+  dplyr::rename(pathway = Kinase.Gene, enrichment = z.score,
+                adj_p_val = FDR, set_size = m) %>%
+  filter(set_size >= 3) %>%
+  mutate(Sample = x_sample)
+
+
+```
+
+
+
