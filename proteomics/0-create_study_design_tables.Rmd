@@ -1,5 +1,5 @@
 ---
-title: "PTRC Exp 18 Study design tables"
+title: "PTRC Exp 21 Study design tables"
 output: html_document
 ---
 
@@ -7,6 +7,7 @@ output: html_document
 library(PNNL.DMS.utils)
 library(stringr)
 library(dplyr)
+setwd("~/OneDrive - PNNL/Documents/GitHub/Exp21_cell_lines/proteomics/")
 ```
 
 
@@ -18,8 +19,8 @@ path_to_phospho_study_design <- "study_design/phospho_study_design/"
 dir.create(path_to_global_study_design)
 dir.create(path_to_phospho_study_design)
 
-global_data_package_num <- 4135
-phospho_data_package_num <- 4136
+global_data_package_num <- 5137
+phospho_data_package_num <- 5138
 
 ```
 
@@ -32,7 +33,7 @@ See `r help(read_study_design)` for more information.
 ```{r samples}
 library(readxl)
 
-metadataTable <- read_excel("data/Exp18_metadata_01-14-2021.xlsx")
+metadataTable <- read_excel("data/Exp21_metadata_01-14-2021.xlsx")
 
 samples <- metadataTable %>% as.data.frame() %>%
   dplyr::select(Index, ReporterName = Channel, 
