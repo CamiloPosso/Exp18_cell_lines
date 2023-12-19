@@ -120,9 +120,58 @@ names(drug.BeatAML)[1] <- names(global.BeatAML)[1]
 # names(drug.BeatAML)[1] <- names(phospho.BeatAML)[1]
 
 #### 2. Run panSEA across contrasts for each exp, omics type ####
-setwd("~/OneDrive - PNNL/Documents/GitHub/Exp21_NRAS_ASO_treated_patients/proteomics/data/")
+# synapse IDs must match order of omics list
+synapse_id_map <- c("syn51409382" = "global_data/", 
+                    "syn51409382" = "phospho_data/")
+synapse_id_map <- c("syn53180717" = "global_data/",
+                    "syn53180718" = "phospho_data/")
+
+# set file names
+DEG.files <- list("Differential_expression_results.csv" = 
+                 panSEA.BeatAML$DEGs$compiled.results$results,
+               "Differential_expression_mean_results.csv" =
+                 panSEA.BeatAML$DEGs$compiled.results$mean.results,
+               "Differential_expression_venn_diagram.pdf" =
+                 panSEA.BeatAML$DEGs$compiled.results$venn.diagram,
+               "Differential_expression_correlation_matrix.pdf" =
+                 panSEA.BeatAML$DEGs$compiled.results$corr.plot,
+               "Differential_expression_dot_plot.pdf" =
+                 panSEA.BeatAML$DEGs$compiled.results$dot.plot)
+GSEA.files <- list("GSEA_results.csv" =
+                  panSEA.BeatAML$mGSEA.results$compiled.results$results,
+                "GSEA_mean_results.csv" =
+                  panSEA.BeatAML$mGSEA.results$compiled.results$mean.results,
+                "GSEA_venn_diagram.pdf" =
+                  panSEA.BeatAML$mGSEA.results$compiled.results$venn.diagram,
+                "GSEA_correlation_matrix.pdf" =
+                  panSEA.BeatAML$mGSEA.results$compiled.results$corr.plot,
+                "GSEA_dot_plot.pdf" =
+                  panSEA.BeatAML$mGSEA.results$compiled.results$dot.plot,
+                "GSEA_interactive_network.graph.html" =
+                  panSEA.BeatAML$mGSEA.network$interactive)
+DMEA.files <- list("DMEA_results.csv" =
+                  panSEA.BeatAML$mDMEA.results$compiled.results$results,
+                "DMEA_mean_results.csv" =
+                  panSEA.BeatAML$mDMEA.results$compiled.results$mean.results,
+                "DMEA_venn_diagram.pdf" =
+                  panSEA.BeatAML$mDMEA.results$compiled.results$venn.diagram,
+                "DMEA_correlation_matrix.pdf" =
+                  panSEA.BeatAML$mDMEA.results$compiled.results$corr.plot,
+                "DMEA_dot_plot.pdf" =
+                  panSEA.BeatAML$mDMEA.results$compiled.results$dot.plot,
+                "DMEA_interactive_network.graph.html" =
+                  panSEA.BeatAML$mDMEA.network$interactive)
+all.files <- list('Differential expression' = DEG.files,
+                  'GSEA' = GSEA.files,
+                  'DMEA' = DMEA.files)
+#all.files2 <- c(DEG.files, GSEA.files, DMEA.files)
+#subsets <- c("Differential expression", "GSEA", "DMEA")
+#setwd("~/OneDrive - PNNL/Documents/GitHub/Exp21_NRAS_ASO_treated_patients/proteomics/data/")
+base.path <- "~/OneDrive - PNNL/Documents/GitHub/Exp21_NRAS_ASO_treated_patients/proteomics/data/"
 omics <- c("global", "phospho")
 for (k in 1:length(omics)) {
+  setwd(paste0(base.path, synapse_id_map[k]))
+  
   ## prepare set annotations
   # generate gmt.features beforehand to save time
   if (omics[k] == "global") {
@@ -200,23 +249,63 @@ for (k in 1:length(omics)) {
   }
   
   # run panSEA by querying BeatAML data
-  global.panSEA.BeatAML <- panSEA::panSEA(data.list, types, 
+  panSEA.BeatAML <- panSEA::panSEA(data.list, types, 
                                           gmt.features = gmt.features,
                                           gmt.drugs = DMEA::as_gmt(moa.BeatAML),
                                           drug.sensitivity = drug.BeatAML,
                                           expression = expr.BeatAML)
   
-  ## upload results to Synapse
-  saveRDS(global.panSEA.BeatAML, file="exp21_global_panSEA_BeatAML.rds")
-  synapse_id_map <- c("syn51409382" = "data/global_data/", 
-                      "syn51409382" = "data/phospho_data/")
+  ## save results & upload to Synapse
+  # store all results locally
+  dir.create("analysis")
+  setwd("analysis")
+  saveRDS(panSEA.BeatAML, file=paste0("exp21_", omics[k], "_panSEA_BeatAML.rds"))
+  panSEA.BeatAML <- readRDS(paste0("exp21_", omics[k], "_panSEA_BeatAML.rds"))
+  
   # instead of crosstabs, change to upload panSEA results
-  for (i in 1:length(synapse_id_map)) {
-    crosstabs <- list.files(path = synapse_id_map[i],
-                            pattern = "crosstab.*.txt",
-                            full.names = T)
-    files <- lapply(crosstabs, synapser::File,
-                    parent = names(synapse_id_map)[i])
-    lapply(files, synapser::synStore)
+  for (i in 1:length(all.files)) {
+    # create local folder for subset of results
+    setwd(paste0(base.path, synapse_id_map[k], "analysis"))
+    dir.create(names(all.files)[i])
+    setwd(names(all.files)[i])
+    
+    # save results locally
+    temp.files <- all.files[[i]]
+    
+    CSV.files <- names(temp.files)[grepl(".csv", names(temp.files))]
+    for (j in 1:length(CSV.files)) {
+      write.csv(temp.files[[CSV.files[j]]], CSV.files[j], row.names = FALSE)
+    }
+    
+    PDF.files <- names(temp.files)[grepl(".pdf", names(temp.files))]
+    for (j in 1:length(PDF.files)) {
+      ggplot2::ggsave(PDF.files[j], temp.files[[PDF.files[j]]], device = "pdf")
+    }
+    
+    HTML.files <- names(temp.files)[grepl(".html", names(temp.files))]
+    if (length(HTML.files) > 0) {
+      for (j in 1:length(HTML.files)) {
+        visNetwork::visSave(temp.files[[HTML.files[j]]], HTML.files[j])
+      }
+    }
+    
+    # create folder on Synpase for subset of results
+    dataFolder <- synapser::synStore(synapser::Folder(names(all.files)[i],
+                                     parent = names(synapse_id_map)[k]))
+    
+    # upload results to Synapse
+    CSVs <- lapply(as.list(CSV.files), synapser::File,
+                    parent = dataFolder)
+    lapply(CSVs, synapser::synStore)
+    
+    if (names(all.files)[i] != "Differential expression") {
+      # PDFs <- lapply(as.list(PDF.files), synapser::File,
+      #                              parent = dataFolder)
+      # lapply(PDFs, synapser::synStore) # need to fix static plots
+      
+      HTMLs <- lapply(HTML.files, synapser::File,
+                                    parent = dataFolder)
+      lapply(HTMLs, synapser::synStore) 
+    }
   }
 }
