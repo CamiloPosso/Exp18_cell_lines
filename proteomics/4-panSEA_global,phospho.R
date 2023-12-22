@@ -96,7 +96,7 @@ names(global.BeatAML) <- global.ids
 global.BeatAML <- as.data.frame(t(global.BeatAML))
 
 # make first column Barcode.ID
-global.BeatAML$Barcode.ID <- rownames(global.BeatAML)
+global.BeatAML[, sample.names] <- rownames(global.BeatAML)
 global.BeatAML <- 
   global.BeatAML[ , c(sample.names, 
                       names(global.BeatAML[ , 1:(ncol(global.BeatAML)-1)]))]
@@ -127,7 +127,7 @@ names(phospho.BeatAML) <- phospho.ids
 phospho.BeatAML <- as.data.frame(t(phospho.BeatAML))
 
 # make first column Barcode.ID
-phospho.BeatAML$Barcode.ID <- rownames(phospho.BeatAML)
+phospho.BeatAML[, sample.names] <- rownames(phospho.BeatAML)
 phospho.BeatAML <- phospho.BeatAML[ , c(sample.names, names(phospho.BeatAML[ , 1:(ncol(phospho.BeatAML)-1)]))]
 
 #### 2. Run panSEA across contrasts for each exp, omics type ####
@@ -207,7 +207,7 @@ for (k in 1:length(omics)) {
       descriptions = "gs_description"
     ) 
   } else if (omics[k] == "phospho") {
-    # only create gmt the first time
+    # # only create gmt the first time
     # ksdb <- read.csv(paste0("https://raw.githubusercontent.com/BelindaBGarana/",
     #                         "panSEA/shiny-app/data/ksdb_20231101.csv"))
     # ksdb.human <- ksdb[
@@ -215,17 +215,40 @@ for (k in 1:length(omics)) {
     # ksdb <- NULL # save space
     # # ksdb.human$SUB_SITE <- paste(ksdb.human$SUBSTRATE, ksdb.human$SUB_MOD_RSD,
     # #                               collapse = "_")
-    # ksdb.human <- ksdb.human %>% unite("SUB_SITE", 
+    # ksdb.human <- ksdb.human %>% unite("SUB_SITE",
     #                                    c("SUBSTRATE", "SUB_MOD_RSD"),
     #                                    sep = "-", remove = FALSE)
+    # 
+    # # remove last character from PNNL phospho feature IDs to match with KSDB
+    # # this would only work for substrates with only 1 site
+    # PNNL_SUB_SITE <- unique(c(phospho.df$SUB_SITE, phospho.BeatAML$SUB_SITE))
+    # SUB_SITE <- stringr::str_sub(PNNL_SUB_SITE, end = -2)
+    # phospho.ref <- data.frame(PNNL_SUB_SITE, SUB_SITE)
+    # phospho.ref$KSDB_SUB_SITE <- NA
+    # phospho.ref[phospho.ref$SUB_SITE %in% ksdb.human$SUB_SITE, 
+    #             ]$KSDB_SUB_SITE <- phospho.ref[
+    #               phospho.ref$SUB_SITE %in% ksdb.human$SUB_SITE, ]$SUB_SITE # 637 matches
+    # phospho.ref$KINASE <- lapply(as.list(phospho.ref$SUB_SITE), 
+    #                              stringr::str_split, sep="-")
+    # 
     # gmt <- DMEA::as_gmt(ksdb.human, "SUB_SITE", "KINASE", min.per.set = 6,
     #                     descriptions = "KIN_ACC_ID")
     # ksdb.human <- NULL # save space
-    # 
-    # # save gmt for future analyses
-    # saveRDS(gmt, "gmt_ksdb_human_20231101.rds")
     
-    gmt <- readRDS("gmt_ksdb_human_20231101.rds")
+    # use PNNL phospho feature IDs instead of ksdb
+    # SUB_SITE <- phospho.df$SUB_SITE
+    # phospho.ref <- data.frame(SUB_SITE)
+    # phospho.ref <- phospho.ref %>% tidyr::extract(SUB_SITE, "KINASE", 
+    #                                               remove = FALSE)
+    # SUB_SITE <- NULL
+    # gmt <- DMEA::as_gmt(phospho.ref, "SUB_SITE", "KINASE", min.per.set = 6)
+
+    # save gmt for future analyses
+    #saveRDS(gmt, "gmt_ksdb_human_20231101.rds")
+    # saveRDS(gmt, "gmt_PNNL_kinase-substrate_PTRC2_exp21.rds")
+    
+    #gmt <- readRDS("gmt_ksdb_human_20231101.rds")
+    gmt <- readRDS("gmt_PNNL_kinase-substrate_PTRC2_exp21.rds")
   }
   
   # run panSEA for each omics type across all contrasts
@@ -264,70 +287,86 @@ for (k in 1:length(omics)) {
   }
   
   # run panSEA by querying BeatAML data
+  #Sys.setenv('R_MAX_VSIZE'=32000000000)
+  #library(usethis) 
+  #usethis::edit_r_environ()
+
   panSEA.BeatAML <- panSEA::panSEA(data.list, types, 
                                    feature.names = feature.names, 
                                    gmt.features = gmt.features,
-                                   gmt.drugs = DMEA::as_gmt(moa.BeatAML),
+                                   gmt.drugs = DMEA::as_gmt(moa.BeatAML, 
+                                                            min.per.set = 5),
                                    drug.sensitivity = drug.BeatAML,
-                                   expression = expr.BeatAML)
+                                   expression = expr.BeatAML, 
+                                   min.per.set = 5)
   
-  
-  # phospho didn't have enough kinase-substrate sets
+  # phospho didn't have enough drug sets for DMEA
   # Error in GSEA_custom(input, gmt, num.permutations, stat.type, min.per.set,  : 
   #                        annotations for 2+ drug sets are required
+  # had to change min.per.set to 5
   
   ## save results & upload to Synapse
   # store all results locally
   dir.create("analysis")
   setwd("analysis")
-  saveRDS(panSEA.BeatAML, file=paste0("exp21_", omics[k], "_panSEA_BeatAML.rds")) # 8.5 GB for 7 contrasts
-  #panSEA.BeatAML <- readRDS(paste0("exp21_", omics[k], "_panSEA_BeatAML.rds"))
+  #saveRDS(panSEA.BeatAML, file=paste0("exp21_", omics[k], "_panSEA_BeatAML.rds")) # 8.5 GB for 7 contrasts
+  panSEA.BeatAML <- readRDS(paste0("exp21_", omics[k], "_panSEA_BeatAML.rds"))
   
   # set file names
   DEG.files <- list("Differential_expression_results.csv" = 
                       panSEA.BeatAML$mDEG.results$compiled.results$results,
                     "Differential_expression_mean_results.csv" =
                       panSEA.BeatAML$mDEG.results$compiled.results$mean.results,
-                    # "Differential_expression_venn_diagram.pdf" =
-                    #   panSEA.BeatAML$mDEG.results$compiled.results$venn.diagram,
                     "Differential_expression_correlation_matrix.pdf" =
-                      panSEA.BeatAML$mDEG.results$compiled.results$corr.plot,
+                      panSEA.BeatAML$mDEG.results$compiled.results$corr.matrix,
                     "Differential_expression_dot_plot.pdf" =
                       panSEA.BeatAML$mDEG.results$compiled.results$dot.plot)
-  GSEA.files <- list("GSEA_results.csv" =
-                       panSEA.BeatAML$mGSEA.results$compiled.results$results,
-                     "GSEA_mean_results.csv" =
-                       panSEA.BeatAML$mGSEA.results$compiled.results$mean.results,
-                     # "GSEA_venn_diagram.pdf" =
-                     #   panSEA.BeatAML$mGSEA.results$compiled.results$venn.diagram,
-                     "GSEA_correlation_matrix.pdf" =
-                       panSEA.BeatAML$mGSEA.results$compiled.results$corr.plot,
-                     "GSEA_dot_plot.pdf" =
-                       panSEA.BeatAML$mGSEA.results$compiled.results$dot.plot,
-                     "GSEA_interactive_network.graph.html" =
-                       panSEA.BeatAML$mGSEA.network$interactive)
   DMEA.files <- list("DMEA_results.csv" =
                        panSEA.BeatAML$mDMEA.results$compiled.results$results,
                      "DMEA_mean_results.csv" =
                        panSEA.BeatAML$mDMEA.results$compiled.results$mean.results,
-                     # "DMEA_venn_diagram.pdf" =
-                     #   panSEA.BeatAML$mDMEA.results$compiled.results$venn.diagram,
                      "DMEA_correlation_matrix.pdf" =
                        panSEA.BeatAML$mDMEA.results$compiled.results$corr.matrix,
                      "DMEA_dot_plot.pdf" =
                        panSEA.BeatAML$mDMEA.results$compiled.results$dot.plot,
                      "DMEA_interactive_network.graph.html" =
                        panSEA.BeatAML$mDMEA.network$interactive)
-  all.files <- list('Differential expression' = DEG.files,
-                    'GSEA' = GSEA.files,
-                    'DMEA' = DMEA.files)
+  if (omics[k] == "phospho") {
+    KSEA.files <- list("KSEA_results.csv" =
+                         panSEA.BeatAML$mKSEA.results$compiled.results$results,
+                       "KSEA_mean_results.csv" =
+                         panSEA.BeatAML$mKSEA.results$compiled.results$mean.results,
+                       "KSEA_correlation_matrix.pdf" =
+                         panSEA.BeatAML$mKSEA.results$compiled.results$corr.matrix,
+                       "KSEA_dot_plot.pdf" =
+                         panSEA.BeatAML$mKSEA.results$compiled.results$dot.plot,
+                       "KSEA_interactive_network.graph.html" =
+                         panSEA.BeatAML$mKSEA.network$interactive)
+    all.files <- list('Differential expression' = DEG.files,
+                      'KSEA' = KSEA.files,
+                      'DMEA' = DMEA.files)
+  } else {
+    GSEA.files <- list("GSEA_results.csv" =
+                         panSEA.BeatAML$mGSEA.results$compiled.results$results,
+                       "GSEA_mean_results.csv" =
+                         panSEA.BeatAML$mGSEA.results$compiled.results$mean.results,
+                       "GSEA_correlation_matrix.pdf" =
+                         panSEA.BeatAML$mGSEA.results$compiled.results$corr.matrix,
+                       "GSEA_dot_plot.pdf" =
+                         panSEA.BeatAML$mGSEA.results$compiled.results$dot.plot,
+                       "GSEA_interactive_network.graph.html" =
+                         panSEA.BeatAML$mGSEA.network$interactive)
+    all.files <- list('Differential expression' = DEG.files,
+                      'GSEA' = GSEA.files,
+                      'DMEA' = DMEA.files)
+  }
   
-  # instead of crosstabs, change to upload panSEA results
   for (i in 1:length(all.files)) {
     # create local folder for subset of results
     setwd(paste0(base.path, synapse_id_map[k], "analysis"))
     dir.create(names(all.files)[i])
     setwd(names(all.files)[i])
+    
     
     # save results locally
     temp.files <- all.files[[i]]
@@ -356,8 +395,9 @@ for (k in 1:length(omics)) {
     }
     
     # create folder on Synpase for subset of results
-    dataFolder <- synapser::synStore(synapser::Folder(names(all.files)[i],
-                                     parent = names(synapse_id_map)[k]))
+    dataFolder <- 
+        synapser::synStore(synapser::Folder(names(all.files)[i],
+                                            parent = names(synapse_id_map)[k]))
     
     # upload results to Synapse
     CSVs <- lapply(as.list(CSV.files), synapser::File,
