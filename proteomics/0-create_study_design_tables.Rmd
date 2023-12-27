@@ -1,5 +1,5 @@
 ---
-title: "PTRC Exp 21 Study design tables"
+title: "PTRC Exp 22 Study design tables"
 output: html_document
 ---
 
@@ -7,7 +7,7 @@ output: html_document
 library(PNNL.DMS.utils)
 library(stringr)
 library(dplyr)
-setwd("~/OneDrive - PNNL/Documents/GitHub/Exp21_NRAS_ASO_treated_patients/proteomics/")
+setwd("~/OneDrive - PNNL/Documents/GitHub/Exp22_CRISPR-Cas9_NRAS_KO_cell_lines/proteomics/")
 ```
 
 
@@ -19,8 +19,8 @@ path_to_phospho_study_design <- "study_design/phospho_study_design/"
 dir.create(path_to_global_study_design)
 dir.create(path_to_phospho_study_design)
 
-global_data_package_num <- 5137
-phospho_data_package_num <- 5138
+global_data_package_num <- 5231
+phospho_data_package_num <- 5232
 
 ```
 
@@ -33,7 +33,7 @@ See `r help(read_study_design)` for more information.
 ```{r samples}
 library(readxl)
 
-metadataTable <- read_excel("data/Experiment 21 - Patient Samples_F.xlsx", sheet = 2) # later change to use synapse
+metadataTable <- read_excel("data/Experiment 22 - Patient Samples_F.xlsx", sheet = 2) # later change to use synapse
 
 samples <- metadataTable %>% as.data.frame() %>%
   dplyr::select(Tube, ReporterName = Channel, 
@@ -94,7 +94,7 @@ write.table(references, paste0(path_to_phospho_study_design, "references.txt"),
 job_records <- PNNL.DMS.utils::get_job_records_by_dataset_package(global_data_package_num)
 
 fractions <- data.frame(Dataset = unique(job_records$Dataset)) %>%
-  mutate(PlexID = sub("^PTRC_Exp21_Plex_0(.*)_G_.*$", "\\1", Dataset)) # customize if Dataset format changes
+  mutate(PlexID = sub("^PTRC_Exp22_Plex_0(.*)_G_.*$", "\\1", Dataset)) # customize if Dataset format changes
 
 write.table(fractions, paste0(path_to_global_study_design, "fractions.txt"),
             quote=F, sep="\t", row.names=F)
@@ -104,7 +104,7 @@ write.table(fractions, paste0(path_to_global_study_design, "fractions.txt"),
 job_records <- PNNL.DMS.utils::get_job_records_by_dataset_package(phospho_data_package_num)
 
 fractions <- data.frame(Dataset = unique(job_records$Dataset)) %>%
-  mutate(PlexID = sub("^PTRC_Exp21_Plex_0(.*)_P_.*$", "\\1", Dataset)) # customize if Dataset format changes
+  mutate(PlexID = sub("^PTRC_Exp22_Plex_0(.*)_P_.*$", "\\1", Dataset)) # customize if Dataset format changes
 
 write.table(fractions, paste0(path_to_phospho_study_design, "fractions.txt"),
             quote=F, sep="\t", row.names=F)

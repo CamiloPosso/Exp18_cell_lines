@@ -1,5 +1,5 @@
 ---
-title: "Ex21 Phospho proteomics"
+title: "Ex22 Phospho proteomics"
 output: html_document
 ---
 
@@ -19,10 +19,10 @@ library(Biostrings)
 library(tidyverse)
 
 
-data_package_num <- 5138
+data_package_num <- 5232
 data_folder <- "data/phospho_data"
-crosstab_prefix <- "ptrc_ex21"
-path_to_global_crosstab <- "data/global_data/ptrc_ex21_crosstab_global_gene_original.txt"
+crosstab_prefix <- "ptrc_ex22"
+path_to_global_crosstab <- "data/global_data/ptrc_ex22_crosstab_global_gene_original.txt"
 
 dir.create(data_folder)
 

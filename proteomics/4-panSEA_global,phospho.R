@@ -1,5 +1,5 @@
 # Differential expression & enrichment analyses: global & phospho
-# PTRC2: exp 21
+# PTRC2: exp 22
 # Author: Belinda B. Garana
 # Created: 2023-12-06
 # Last edit: 2023-12-14
@@ -9,15 +9,15 @@ library(stringr); library(tidyr)
 
 #### 1. Import metadata & crosstabs ####
 setwd(
-"~/OneDrive - PNNL/Documents/GitHub/Exp21_NRAS_ASO_treated_patients/proteomics/data/"
+"~/OneDrive - PNNL/Documents/GitHub/Exp22_NRAS_ASO_treated_patients/proteomics/data/"
 )
-meta.df <- readxl::read_excel("Experiment 21 - Patient Samples_F.xlsx", 
+meta.df <- readxl::read_excel("Experiment 22 - Patient Samples_F.xlsx", 
                               sheet = 2)
 global.df <- read.table(
-  "global_data/ptrc_ex21_crosstab_global_gene_corrected.txt", 
+  "global_data/ptrc_ex22_crosstab_global_gene_corrected.txt", 
   sep = "\t")
 phospho.df <- read.table(
-  "phospho_data/ptrc_ex21_crosstab_phospho_SiteID_corrected.txt", 
+  "phospho_data/ptrc_ex22_crosstab_phospho_SiteID_corrected.txt", 
   sep = "\t")
 
 # add column for feature names and later make it the first column
@@ -132,10 +132,8 @@ phospho.BeatAML <- phospho.BeatAML[ , c(sample.names, names(phospho.BeatAML[ , 1
 
 #### 2. Run panSEA across contrasts for each exp, omics type ####
 # synapse IDs must match order of omics list
-# synapse_id_map <- c("syn51409382" = "global_data/", 
-#                     "syn51409382" = "phospho_data/")
-synapse_id_map <- c("syn53180717" = "global_data/",
-                    "syn53180718" = "phospho_data/")
+# synapse_id_map <- c("syn53180717" = "global_data/",
+#                     "syn53180718" = "phospho_data/")
 
 ## prepare other input parameters
 # identify contrasts
@@ -184,8 +182,8 @@ for (i in 1:length(treatments)) {
 
 #all.files2 <- c(DEG.files, GSEA.files, DMEA.files)
 #subsets <- c("Differential expression", "GSEA", "DMEA")
-#setwd("~/OneDrive - PNNL/Documents/GitHub/Exp21_NRAS_ASO_treated_patients/proteomics/data/")
-base.path <- "~/OneDrive - PNNL/Documents/GitHub/Exp21_NRAS_ASO_treated_patients/proteomics/data/"
+#setwd("~/OneDrive - PNNL/Documents/GitHub/Exp22_CRISPR-Cas9_NRAS_KO_cell_lines/proteomics/data/")
+base.path <- "~/OneDrive - PNNL/Documents/GitHub/Exp22_CRISPR-Cas9_NRAS_KO_cell_lines/proteomics/data/"
 omics <- c("global", "phospho")
 for (k in 1:length(omics)) {
   setwd(paste0(base.path, synapse_id_map[k]))
@@ -245,10 +243,10 @@ for (k in 1:length(omics)) {
 
     # save gmt for future analyses
     #saveRDS(gmt, "gmt_ksdb_human_20231101.rds")
-    # saveRDS(gmt, "gmt_PNNL_kinase-substrate_PTRC2_exp21.rds")
+    # saveRDS(gmt, "gmt_PNNL_kinase-substrate_PTRC2_exp22.rds")
     
     #gmt <- readRDS("gmt_ksdb_human_20231101.rds")
-    gmt <- readRDS("gmt_PNNL_kinase-substrate_PTRC2_exp21.rds")
+    gmt <- readRDS("gmt_PNNL_kinase-substrate_PTRC2_exp22.rds")
   }
   
   # run panSEA for each omics type across all contrasts
@@ -309,8 +307,8 @@ for (k in 1:length(omics)) {
   # store all results locally
   dir.create("analysis")
   setwd("analysis")
-  #saveRDS(panSEA.BeatAML, file=paste0("exp21_", omics[k], "_panSEA_BeatAML.rds")) # 8.5 GB for 7 contrasts
-  panSEA.BeatAML <- readRDS(paste0("exp21_", omics[k], "_panSEA_BeatAML.rds"))
+  #saveRDS(panSEA.BeatAML, file=paste0("exp22_", omics[k], "_panSEA_BeatAML.rds")) # 8.5 GB for 7 contrasts
+  panSEA.BeatAML <- readRDS(paste0("exp22_", omics[k], "_panSEA_BeatAML.rds"))
   
   # set file names
   DEG.files <- list("Differential_expression_results.csv" = 

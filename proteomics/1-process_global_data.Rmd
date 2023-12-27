@@ -1,5 +1,5 @@
 ---
-title: "Ex21 Global proteomics"
+title: "Ex22 Global proteomics"
 output: html_document
 ---
 
@@ -20,9 +20,9 @@ library(PNNL.DMS.utils)
 library(Biostrings)
 library(tidyverse)
 
-data_package_num <- 5137
+data_package_num <- 5231
 data_folder <- "data/global_data"
-crosstab_prefix <- "ptrc_ex21"
+crosstab_prefix <- "ptrc_ex22"
 
 dir.create(data_folder)
 

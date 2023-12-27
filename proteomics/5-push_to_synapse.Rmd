@@ -1,5 +1,5 @@
 ---
-title: "PTRC Ex21 Push to synapse"
+title: "PTRC Ex22 Push to synapse"
 output: html_document
 ---
 
@@ -14,8 +14,8 @@ synLogin()
 
 
 ```{r upload}
-synapse_id_map <- c("syn51409382" = "data/global_data/", 
-                 "syn51409382" = "data/phospho_data/")
+# synapse_id_map <- c("syn51409382" = "data/global_data/", 
+#                  "syn51409382" = "data/phospho_data/")
 
 for (i in 1:length(synapse_id_map)) {
   crosstabs <- list.files(path = synapse_id_map[i],

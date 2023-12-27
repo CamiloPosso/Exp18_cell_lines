@@ -1,5 +1,5 @@
 ---
-title: "Ex21 Phospho proteomics"
+title: "Ex22 Phospho proteomics"
 output: html_document
 ---
 
@@ -14,11 +14,11 @@ library(dplyr)
 library(ggplot2)
 library(readxl)
 
-global_crosstab <- read.table("../proteomics/data/global_data/ptrc_ex21_crosstab_global_gene_original.txt")
-phospho_crosstab <- read.table("../proteomics/data/phospho_data/ptrc_ex21_crosstab_phospho_siteID_original.txt")
-phospho_crosstab_prot <- read.table("../proteomics/data/phospho_data/ptrc_ex21_crosstab_phospho_siteID_prot_original.txt", sep = "\t")
+global_crosstab <- read.table("../proteomics/data/global_data/ptrc_ex22_crosstab_global_gene_original.txt")
+phospho_crosstab <- read.table("../proteomics/data/phospho_data/ptrc_ex22_crosstab_phospho_siteID_original.txt")
+phospho_crosstab_prot <- read.table("../proteomics/data/phospho_data/ptrc_ex22_crosstab_phospho_siteID_prot_original.txt", sep = "\t")
 
-meta <- read_excel("../proteomics/data/Experiment 21 - Patient Samples_F.xlsx", sheet = 2) %>%
+meta <- read_excel("../proteomics/data/Experiment 22 - Patient Samples_F.xlsx", sheet = 2) %>%
   filter(!is.na(Tube)) %>%
   mutate(Tube = as.character(Tube),
          Plex = as.character(Plex)) %>% as.data.frame()
@@ -149,11 +149,11 @@ Push to synapse.
 
 ```{r}
 write.table(exprs(m_global_corrected), 
-            file = "data/global_data/ptrc_ex21_crosstab_global_gene_corrected.txt",
+            file = "data/global_data/ptrc_ex22_crosstab_global_gene_corrected.txt",
             quote=F, sep="\t")
 
 write.table(exprs(m_phospho_corrected), 
-            file = "data/phospho_data/ptrc_ex21_crosstab_phospho_SiteID_corrected.txt",
+            file = "data/phospho_data/ptrc_ex22_crosstab_phospho_SiteID_corrected.txt",
             quote=F, sep="\t")
 
 
@@ -171,7 +171,7 @@ phospho_prot_corrected <- phospho_prot_corrected %>% select(-feature) %>%
 
 colnames(phospho_prot_corrected) <- sub("(^[0-9].*$)", "data:\\1", colnames(phospho_prot_corrected))
 write.table(phospho_prot_corrected, 
-            file = "data/phospho_data/ptrc_ex21_crosstab_phospho_SiteID_prot_corrected.txt",
+            file = "data/phospho_data/ptrc_ex22_crosstab_phospho_SiteID_prot_corrected.txt",
             sep="\t")
 
 ```
@@ -205,10 +205,10 @@ hist(plex_phospho_corrected$P.Value)
 ```{r}
 library(readxl)
 ## Finalizing KSTAR input
-crosstab <- read.table(file = "data/phospho_data/ptrc_ex21_crosstab_phospho_SiteID_prot_corrected.txt",
+crosstab <- read.table(file = "data/phospho_data/ptrc_ex22_crosstab_phospho_SiteID_prot_corrected.txt",
             sep="\t")
 colnames(crosstab) <- sub("data.", "", colnames(crosstab))
-meta <- read_excel("../proteomics/data/Experiment 21 - Patient Samples_F.xlsx", sheet = 2) %>%
+meta <- read_excel("../proteomics/data/Experiment 22 - Patient Samples_F.xlsx", sheet = 2) %>%
   filter(!is.na(Tube)) %>%
   mutate(Tube = as.character(Tube),
          Plex = as.character(Plex)) %>% as.data.frame()
@@ -231,7 +231,7 @@ for (Treatment in all_groups){
 }
 
 data_folder = "data/phospho_data/"
-crosstab_prefix = "ptrc_ex21"
+crosstab_prefix = "ptrc_ex22"
 ## showing logFC vs baseline and none for each treatment.
 write.table(crosstab_kstar,
             file=file.path(data_folder, paste(crosstab_prefix, "crosstab_phospho_treatments_logFC.txt", sep="_")),
