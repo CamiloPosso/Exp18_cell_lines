@@ -78,15 +78,9 @@ This function remaps UniProt protein accessions to gene symbol.
 ```{r remap_accessions}
 options(timeout = 120)
 # get fst_dms_path from:
-debug(path_to_FASTA_used_by_DMS)
 path_to_FASTA_used_by_DMS(data_package_num)
+fst_dms_pth <- path_to_FASTA_used_by_DMS(data_package_num)
 
-# in debug environment after running line 34: 
-# assign("fst_dms_path", temp_filepath, envir = globalenv())
-
-#fst_dms_pth <- path_to_FASTA_used_by_DMS(data_package_num)
-#fst_dms_pth <- "/var/folders/8b/3csd5ptx4_9_qmpg2m3_1h3h0000gn/T//RtmphSdOua/file3045652d6d1f.fasta" # changes every time
-fst_dms_pth <- path_to_FASTA
 fst <- readAAStringSet(fst_dms_pth)
 
 conv <- data.frame(NAME = names(fst)) %>%

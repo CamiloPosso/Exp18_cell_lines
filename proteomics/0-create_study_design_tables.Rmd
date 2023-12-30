@@ -33,15 +33,15 @@ See `r help(read_study_design)` for more information.
 ```{r samples}
 library(readxl)
 
-metadataTable <- read_excel("data/Experiment 22 - Patient Samples_F.xlsx", sheet = 2) # later change to use synapse
+metadataTable <- read_excel("data/Expt 22 Design.xlsx", sheet = 2)
 
 samples <- metadataTable %>% as.data.frame() %>%
   dplyr::select(Tube, ReporterName = Channel, 
-                PlexID = Plex, Treatment) %>%
+                PlexID = Plex, 'Sample Name') %>%
   mutate(QuantBlock = "1",
          ReporterAlias = as.character(Tube),
          PlexID = as.character(PlexID),
-         ReporterAlias = case_when(grepl("EFERENCE", Tube) ~ "ref",
+         ReporterAlias = case_when(is.na(Tube) ~ "ref",
                                    TRUE ~ ReporterAlias), # customize if reference changes
          ReporterName = case_when(ReporterName == "126C" ~ "126",       ## Here we make the channel names match the
                                   ReporterName == "134" ~ "134N",       ## format of the converter_ion conversion table.
@@ -49,26 +49,26 @@ samples <- metadataTable %>% as.data.frame() %>%
          MeasurementName = as.character(Tube))
 
 samples_p <- samples
-samples_p[grepl("Pooled", samples_p$Treatment), "MeasurementName"] <- c("Pooled 1", "Pooled 2")
-samples_p[grepl("Pooled", samples_p$Treatment), "ReporterAlias"] <- c("Pooled 1", "Pooled 2")
+samples_p[grepl("Pooled", samples_p$'Sample Name'), "MeasurementName"] <- c("Pooled 1", "Pooled 2")
+samples_p[grepl("Pooled", samples_p$'Sample Name'), "ReporterAlias"] <- c("Pooled 1", "Pooled 2")
 samples_p[samples_p$ReporterAlias == "ref" | is.na(samples_p$ReporterAlias), "MeasurementName"] <- NA
 
 samples[grepl("Pooled", samples$MeasurementName), "MeasurementName"] <- NA
 samples[samples$ReporterAlias == "ref" | is.na(samples$ReporterAlias), "MeasurementName"] <- NA
 
-write.table(samples %>% select(-Tube, -Treatment), 
+write.table(samples %>% select(-Tube, -'Sample Name'), 
             paste0(path_to_global_study_design, "samples.txt"),
             quote=F, sep="\t", row.names=F)
 
-write.table(samples_p %>% select(-Tube, -Treatment), 
+write.table(samples_p %>% select(-Tube, -'Sample Name'), 
             paste0(path_to_global_study_design, "samples_pooled.txt"),
             quote=F, sep="\t", row.names=F)
 
-write.table(samples %>% select(-Tube, -Treatment), 
+write.table(samples %>% select(-Tube, -'Sample Name'), 
             paste0(path_to_phospho_study_design, "samples.txt"),
             quote=F, sep="\t", row.names=F)
 
-write.table(samples_p %>% select(-Tube, -Treatment), 
+write.table(samples_p %>% select(-Tube, -'Sample Name'), 
             paste0(path_to_phospho_study_design, "samples_pooled.txt"),
             quote=F, sep="\t", row.names=F)
 
@@ -93,8 +93,11 @@ write.table(references, paste0(path_to_phospho_study_design, "references.txt"),
 ## Global
 job_records <- PNNL.DMS.utils::get_job_records_by_dataset_package(global_data_package_num)
 
-fractions <- data.frame(Dataset = unique(job_records$Dataset)) %>%
-  mutate(PlexID = sub("^PTRC_Exp22_Plex_0(.*)_G_.*$", "\\1", Dataset)) # customize if Dataset format changes
+# fractions <- data.frame(Dataset = unique(job_records$Dataset)) %>%
+#   mutate(PlexID = sub("^PTRC_Exp22_Plex_0(.*)_G_.*$", "\\1", Dataset)) # customize if Dataset format changes
+
+# only 1 plex so:
+fractions <- data.frame(Dataset = unique(job_records$Dataset), PlexID = 1)
 
 write.table(fractions, paste0(path_to_global_study_design, "fractions.txt"),
             quote=F, sep="\t", row.names=F)
@@ -103,8 +106,11 @@ write.table(fractions, paste0(path_to_global_study_design, "fractions.txt"),
 ## Phospho
 job_records <- PNNL.DMS.utils::get_job_records_by_dataset_package(phospho_data_package_num)
 
-fractions <- data.frame(Dataset = unique(job_records$Dataset)) %>%
-  mutate(PlexID = sub("^PTRC_Exp22_Plex_0(.*)_P_.*$", "\\1", Dataset)) # customize if Dataset format changes
+# fractions <- data.frame(Dataset = unique(job_records$Dataset)) %>%
+#   mutate(PlexID = sub("^PTRC_Exp22_Plex_0(.*)_P_.*$", "\\1", Dataset)) # customize if Dataset format changes
+
+# only 1 plex so:
+fractions <- data.frame(Dataset = unique(job_records$Dataset), PlexID = 1)
 
 write.table(fractions, paste0(path_to_phospho_study_design, "fractions.txt"),
             quote=F, sep="\t", row.names=F)
