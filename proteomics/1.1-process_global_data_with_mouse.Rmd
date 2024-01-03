@@ -1,5 +1,5 @@
 ---
-title: "Chr8 Global proteomics"
+title: "Chr8 Global proteomics with mouse"
 output: html_document
 ---
 
@@ -20,8 +20,8 @@ library(PNNL.DMS.utils)
 library(Biostrings)
 library(tidyverse)
 
-data_package_num <- 5243
-data_folder <- "data/global_data"
+data_package_num <- 5343
+data_folder <- "data/global_with_mouse_data"
 crosstab_prefix <- "Chr8"
 
 dir.create(data_folder)
@@ -35,9 +35,9 @@ Study design information in PlexedPiper is encoded in three tables: fractions, s
 These tables can be made using metadata and should be stored on the DMS before processing.
 
 ```{r read_study_design}
-fractions <- read.table("study_design/global_study_design/fractions.txt", sep = "\t", header = T)
-samples <- read.table("study_design/global_study_design/samples.txt", sep = "\t", header = T)
-references <- read.table("study_design/global_study_design/references.txt", sep = "\t", header = T)
+fractions <- read.table("study_design/global_with_mouse_study_design/fractions.txt", sep = "\t", header = T)
+samples <- read.table("study_design/global_with_mouse_study_design/samples.txt", sep = "\t", header = T)
+references <- read.table("study_design/global_with_mouse_study_design/references.txt", sep = "\t", header = T)
 
 ```
 

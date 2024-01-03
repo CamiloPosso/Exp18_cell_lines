@@ -28,12 +28,12 @@ library(Biostrings)
 library(tidyverse)
 
 
-data_package_num <- 5232
+data_package_num <- 5344
 data_folder <- "data/phospho_data"
-crosstab_prefix <- "ptrc_ex22"
+crosstab_prefix <- "Chr8"
 
 ## Use protein level
-path_to_global_crosstab <- "data/global_data/ptrc_ex22_crosstab_global_prot_original.txt"
+path_to_global_crosstab <- "data/global_data/Chr8_crosstab_global_prot_original.txt"
 
 dir.create(data_folder)
 
