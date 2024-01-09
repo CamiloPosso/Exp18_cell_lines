@@ -135,11 +135,7 @@ show(msnid)
 library(Biostrings)
 
 options(timeout = 120)
-debug(path_to_FASTA_used_by_DMS)
 path_to_FASTA <- path_to_FASTA_used_by_DMS(data_package_num)
-
-# in debug environment after running line 34: 
-# assign("fst_dms_path", temp_filepath, envir = globalenv())
 
 mySequences <- readAAStringSet(path_to_FASTA)
 extraction_pttrn <- paste0(".*", "\\|([^|-]+)(-\\d+)?\\|", ".*")
@@ -206,6 +202,12 @@ aggregation_level <- c("SiteID", "peptide")
 
 # remove non-samples (empty), but keep references
 samples <- samples[samples$ReporterAlias != "EMPTY", ]
+
+debug(create_crosstab)
+# once in debug environment, run:
+# debug(converting_to_relative_to_reference)
+# because there is more than 1 reference on the plex, after line 35 run: 
+# quant_data_i_w <- dcast(quant_data_i, Specie ~ ReporterAlias, fun.aggregate = mean, value.var = "Abundance")
 
 crosstab <- create_crosstab(msnid, masic_data,
                             aggregation_level,
@@ -293,6 +295,13 @@ peptide_kstar <- peptide_kstar %>%
   ungroup() %>% unique()
 
 aggregation_level <- c("SiteID")
+
+debug(create_crosstab)
+# once in debug environment, run:
+# debug(converting_to_relative_to_reference)
+# because there is more than 1 reference on the plex, after line 35 run: 
+# quant_data_i_w <- dcast(quant_data_i, Specie ~ ReporterAlias, fun.aggregate = mean, value.var = "Abundance")
+
 crosstab <- create_crosstab(msnid, masic_data,
                             aggregation_level,
                             fractions, samples, references)

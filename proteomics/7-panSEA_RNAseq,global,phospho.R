@@ -22,6 +22,11 @@ phospho.df <- read.table(
   "phospho_data/Chr8_crosstab_phospho_SiteID_corrected.txt", 
   sep = "\t")
 
+synapser::synGet("syn49554376", 
+                 downloadLocation = getwd())
+RNA.df <- read.table("salmon.merged.gene_counts.tsv", sep = "\t", 
+                     header = TRUE)
+
 # add column for feature names and later make it the first column
 global.df$Gene <- rownames(global.df)
 global.w.mouse.df$Gene <- rownames(global.w.mouse.df)
@@ -36,6 +41,7 @@ for (i in 1:nrow(meta.df)) {
     meta.df$Tube[i] <- tube.num
   }
 }
+
 
 #### 2. Run panSEA across contrasts for each exp, omics type ####
 # synapse IDs must match order of omics list
@@ -257,11 +263,12 @@ for (k in 1:length(omics)) {
     # compile inputs & results for network graph
     outputs <- list()
     for (i in 1:length(types)) {
-      outputs[[types[i]]] <- panSEA.results[["mGSEA.results"]]$all.results[[types[i]]]$result
+      outputs[[types[i]]] <- panSEA.results[["mGSEA.results"]]$all.results$result
     }
     
-    panSEA.results[["mGSEA.network"]] <- panSEA::netSEA(
-      data.list, outputs, feature.names, rep("Chr8", length(data.list))
+    ssGSEA.network <- panSEA::netSEA(
+      data.list, outputs, feature.names,
+      GSEA.rank.var
     )
     
     KSEA.files <- list("KSEA_results.csv" =
@@ -274,14 +281,15 @@ for (k in 1:length(omics)) {
                          panSEA.results$mGSEA.results$compiled.results$dot.plot,
                        "KSEA_interactive_network.graph.html" =
                          panSEA.results$mGSEA.network$interactive)
-    all.files <- list('KSEA' = KSEA.files)
+    all.files <- list('KSEA' = KSEA.files,
+                      'DMEA' = DMEA.files)
   }
   
   ## save results & upload to Synapse
   # store all results locally
   dir.create("analysis")
   setwd("analysis")
-  #saveRDS(panSEA.results, file=paste0("Chr8_", omics[k], "_panSEA_CCLE.rds")) # 8.5 GB for 7 contrasts
+  saveRDS(panSEA.results, file=paste0("Chr8_", omics[k], "_panSEA_CCLE.rds")) # 8.5 GB for 7 contrasts
   # panSEA.results <- readRDS(paste0("Chr8_", omics[k], "_panSEA_CCLE.rds"))
   
   for (i in 1:length(all.files)) {

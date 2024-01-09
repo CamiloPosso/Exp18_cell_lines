@@ -194,6 +194,12 @@ aggregation_level <- c("accession")
 # remove non-samples (empty), but keep references
 samples <- samples[samples$ReporterAlias != "EMPTY", ]
 
+debug(create_crosstab)
+# once in debug environment, run:
+# debug(converting_to_relative_to_reference)
+# because there is more than 1 reference on the plex, after line 35 run: 
+# quant_data_i_w <- dcast(quant_data_i, Specie ~ ReporterAlias, fun.aggregate = mean, value.var = "Abundance")
+
 quant_cross_tab <- create_crosstab(msnid, 
                                    masic_data, 
                                    aggregation_level, 
@@ -210,6 +216,13 @@ write.table(quant_cross_tab, file=file.path(data_folder, paste(crosstab_prefix, 
 
 ```{r create_global_peptide_crosstab}
 aggregation_level <- c("peptide")
+
+debug(create_crosstab)
+# once in debug environment, run:
+# debug(converting_to_relative_to_reference)
+# because there is more than 1 reference on the plex, after line 35 run: 
+# quant_data_i_w <- dcast(quant_data_i, Specie ~ ReporterAlias, fun.aggregate = mean, value.var = "Abundance")
+
 quant_cross_tab <- create_crosstab(msnid, 
                                    masic_data, 
                                    aggregation_level, 
@@ -234,6 +247,13 @@ psms(msnid_prot) <- psms(msnid_prot) %>%
   filter(!grepl("Contaminant", accession))
 
 aggregation_level <- c("accession")
+
+debug(create_crosstab)
+# once in debug environment, run:
+# debug(converting_to_relative_to_reference)
+# because there is more than 1 reference on the plex, after line 35 run: 
+# quant_data_i_w <- dcast(quant_data_i, Specie ~ ReporterAlias, fun.aggregate = mean, value.var = "Abundance")
+
 quant_cross_tab_prot <- create_crosstab(msnid_prot, 
                                         masic_data, 
                                         aggregation_level, 

@@ -38,9 +38,20 @@ library(readxl)
 
 metadataTable <- read_excel("data/Chr8-MetaDataSheet.xlsx")
 
+# add Plex and Tube numbers
+metadataTable$Plex <- 1
+metadataTable$Tube <- NA
+tube.num <- 0
+for (i in 1:nrow(metadataTable)) {
+  if (metadataTable$SampleID[i] != "reference") {
+    tube.num <- tube.num + 1
+    metadataTable$Tube[i] <- tube.num
+  }
+}
+
 samples <- metadataTable %>% as.data.frame() %>%
   dplyr::select(Tube, ReporterName = Channel, 
-                PlexID = Plex, 'Sample Name') %>%
+                PlexID = Plex, 'SampleID') %>%
   mutate(QuantBlock = "1",
          ReporterAlias = as.character(Tube),
          PlexID = as.character(PlexID),
@@ -49,37 +60,37 @@ samples <- metadataTable %>% as.data.frame() %>%
          ReporterName = case_when(ReporterName == "126C" ~ "126",       ## Here we make the channel names match the
                                   ReporterName == "134" ~ "134N",       ## format of the converter_ion conversion table.
                                   TRUE ~ ReporterName),
-         MeasurementName = as.character(Tube))
+         MeasurementName = as.character(Tube)) # measurement names must be unique
 
 samples_p <- samples
-samples_p[grepl("Pooled", samples_p$'Sample Name'), "MeasurementName"] <- c("Pooled 1", "Pooled 2")
-samples_p[grepl("Pooled", samples_p$'Sample Name'), "ReporterAlias"] <- c("Pooled 1", "Pooled 2")
+samples_p[grepl("Pooled", samples_p$'SampleID'), "MeasurementName"] <- c("Pooled 1", "Pooled 2")
+samples_p[grepl("Pooled", samples_p$'SampleID'), "ReporterAlias"] <- c("Pooled 1", "Pooled 2")
 samples_p[samples_p$ReporterAlias == "ref" | is.na(samples_p$ReporterAlias), "MeasurementName"] <- NA
 
 samples[grepl("Pooled", samples$MeasurementName), "MeasurementName"] <- NA
 samples[samples$ReporterAlias == "ref" | is.na(samples$ReporterAlias), "MeasurementName"] <- NA
 
-write.table(samples %>% select(-Tube, -'Sample Name'), 
+write.table(samples %>% select(-Tube, -'SampleID'), 
             paste0(path_to_global_study_design, "samples.txt"),
             quote=F, sep="\t", row.names=F)
 
-write.table(samples_p %>% select(-Tube, -'Sample Name'), 
+write.table(samples_p %>% select(-Tube, -'SampleID'), 
             paste0(path_to_global_study_design, "samples_pooled.txt"),
             quote=F, sep="\t", row.names=F)
 
-write.table(samples %>% select(-Tube, -'Sample Name'), 
+write.table(samples %>% select(-Tube, -'SampleID'), 
             paste0(path_to_global_with_mouse_study_design, "samples.txt"),
             quote=F, sep="\t", row.names=F)
 
-write.table(samples_p %>% select(-Tube, -'Sample Name'), 
+write.table(samples_p %>% select(-Tube, -'SampleID'), 
             paste0(path_to_global_with_mouse_study_design, "samples_pooled.txt"),
             quote=F, sep="\t", row.names=F)
 
-write.table(samples %>% select(-Tube, -'Sample Name'), 
+write.table(samples %>% select(-Tube, -'SampleID'), 
             paste0(path_to_phospho_study_design, "samples.txt"),
             quote=F, sep="\t", row.names=F)
 
-write.table(samples_p %>% select(-Tube, -'Sample Name'), 
+write.table(samples_p %>% select(-Tube, -'SampleID'), 
             paste0(path_to_phospho_study_design, "samples_pooled.txt"),
             quote=F, sep="\t", row.names=F)
 
