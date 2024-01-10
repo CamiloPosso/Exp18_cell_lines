@@ -42,41 +42,26 @@ for (i in 1:nrow(meta.df)) {
   }
 }
 
-
-#### 2. Run panSEA across contrasts for each exp, omics type ####
+#### 2. Run panSEA across omics types ####
 # synapse IDs must match order of omics list
-synapse_id_map <- c("syn53217098" = "global_data/",
-                    "syn53217121" = "global_with_mouse_data/",
-                    "syn53217102" = "phospho_data/")
+synapse_id_map <- c("syn" = "multi-omics",
+                    "syn" = "Proteomics",
+                    "syn" = "Proteomics and RNA-seq")
 
 ## prepare other input parameters
 # identify samples - only 1 group here so no contrasts (no controls)
 treatments <- unique(meta.df$SampleID[meta.df$SampleID != "reference"])
 
-# set short-hand names for treatments for better plots
-# IMPORTANT: these must have the same order as treatments above
-# types <- c()
-# for (i in 1:length(treatments)) {
-#   types <- c(types, paste(treatments[i], "rep", seq(1, 2)))  
-# }
-
+# set names for treatments for plots
 meta.df$type <- NA
 meta.df <- meta.df[order(meta.df$SampleID), ]
 
-types <- c()
-for (i in 1:length(treatments)) {
-  temp.types <- paste(treatments[i], "rep", seq(1, 2))
-  types <- c(types, temp.types)
-  meta.df[meta.df$SampleID == treatments[i], ]$type <- temp.types
-}
+# types <- c("Global", "Global with Mouse", "Phospho", "RNA-seq")
+types <- c("Global", "Phospho")
 
 # identify column names containing data for each treatment
 # add X in front of tube names to match column names 
 # after import (e.g., X5 for tube 5)
-# sample.groups <- list(
-#   paste0("X", seq(1, 
-#                   length(meta.df$SampleID[meta.df$SampleID != "reference"]))))
-
 sample.groups <- list()
 GSEA.rank.var <- c()
 for (i in 1:length(types)) {
@@ -91,9 +76,7 @@ for (i in 1:length(types)) {
 #subsets <- c("Differential expression", "GSEA", "DMEA")
 #setwd("~/OneDrive - PNNL/Documents/GitHub/Chr8/proteomics/data/")
 base.path <- "~/OneDrive - PNNL/Documents/GitHub/Chr8/proteomics/data/"
-#omics <- c("global", "phospho")
-omics <- c("global", "global-with-mouse", "phospho")
-for (k in 1:length(omics)) {
+for (k in 1:length(synapse_id_map)) {
   setwd(paste0(base.path, synapse_id_map[k]))
   
   ## prepare set annotations
