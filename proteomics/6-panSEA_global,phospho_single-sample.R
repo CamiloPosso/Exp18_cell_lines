@@ -37,6 +37,32 @@ for (i in 1:nrow(meta.df)) {
   }
 }
 
+## get CCLE proteomics data to query with DMEA
+download.file("https://figshare.com/ndownloader/files/41466702", "proteomics.csv.gz")
+prot.df <- read.csv(gzfile("proteomics.csv.gz"),fileEncoding="UTF-16LE")
+
+allgenes = readr::read_csv("https://figshare.com/ndownloader/files/40576109")
+genes = allgenes|>
+  dplyr::select(gene_symbol,entrez_id)|>
+  dplyr::distinct()
+#genes <- genes[genes$gene_symbol %in% colnames(RNA.df)[2:ncol(RNA.df)], ]
+
+allsamples = readr::read_csv('https://figshare.com/ndownloader/files/40576103')
+CCLE.samples <- dplyr::distinct(allsamples[allsamples$id_source == "CCLE",
+                                           c("other_id","improve_sample_id")])
+
+# merge prot.df with genes, samples to stop using improve IDs
+prot.df <- merge(prot.df, CCLE.samples)
+prot.df <- merge(prot.df, genes)
+prot.df$entrez_id <- NULL
+prot.df <- dplyr::distinct(prot.df)
+
+# convert to wide format for DMEA
+prot.df <- reshape2::dcast(prot.df, other_id ~ gene_symbol, mean,
+                           value.var = "proteomics")
+colnames(prot.df)[1] <- "CCLE_ID"
+
+
 #### 2. Run panSEA across contrasts for each exp, omics type ####
 # synapse IDs must match order of omics list
 synapse_id_map <- c("syn53217098" = "global_data/",
@@ -72,6 +98,7 @@ for (i in 1:length(treatments)) {
 #                   length(meta.df$SampleID[meta.df$SampleID != "reference"]))))
 
 sample.groups <- list()
+expr <- list()
 GSEA.rank.var <- c()
 for (i in 1:length(types)) {
   sample.groups[[types[i]]] <-
@@ -79,13 +106,11 @@ for (i in 1:length(types)) {
   GSEA.rank.var <- c(GSEA.rank.var, 
                      paste0("X", 
                             na.omit(meta.df[meta.df$type == types[i], ]$Tube)))
+  expr[[types[i]]] <- prot.df[ , colSums(is.na(prot.df)) == 0]
 }
 
-#all.files2 <- c(DEG.files, GSEA.files, DMEA.files)
-#subsets <- c("Differential expression", "GSEA", "DMEA")
 #setwd("~/OneDrive - PNNL/Documents/GitHub/Chr8/proteomics/data/")
 base.path <- "~/OneDrive - PNNL/Documents/GitHub/Chr8/proteomics/data/"
-#omics <- c("global", "phospho")
 omics <- c("global", "global-with-mouse", "phospho")
 for (k in 1:length(omics)) {
   setwd(paste0(base.path, synapse_id_map[k]))
@@ -167,6 +192,13 @@ for (k in 1:length(omics)) {
                                      feature.names = feature.names,
                                      gmt.features = gmt.features)
     
+    prot.panSEA.results <- panSEA::panSEA(data.list, types,
+                                          GSEA.rank.var = rep("Chr8", length(types)),
+                                          group.names = "Chr8", group.samples = 2,
+                                          feature.names = feature.names,
+                                          gmt.features = gmt.features,
+                                          expression = expr)
+    
     # panSEA.results <- panSEA::panSEA(list(global.df), types = "Proteomics",
     #                                  #GSEA.rank.var = GSEA.rank.var,
     #                                  group.names = "Chr8", 
@@ -175,6 +207,16 @@ for (k in 1:length(omics)) {
     #                                  #gmt.features = gmt.features,
     #                                  gmt.features = list(gmt))
     
+    prot.DMEA.files <- list("DMEA_results.csv" =
+                              prot.panSEA.results$mDMEA.results[["Chr8"]]$compiled.results$results,
+                            "DMEA_mean_results.csv" =
+                              prot.panSEA.results$mDMEA.results[["Chr8"]]$compiled.results$mean.results,
+                            "DMEA_correlation_matrix.pdf" =
+                              prot.panSEA.results$mDMEA.results[["Chr8"]]$compiled.results$corr.matrix,
+                            "DMEA_dot_plot.pdf" =
+                              prot.panSEA.results$mDMEA.results[["Chr8"]]$compiled.results$dot.plot,
+                            "DMEA_interactive_network.graph.html" =
+                              prot.panSEA.results$mDMEA.network[["Chr8"]]$interactive)
     DMEA.files <- list("DMEA_results.csv" =
                          panSEA.results$mDMEA.results[["Chr8"]]$compiled.results$results,
                        "DMEA_mean_results.csv" =
@@ -195,8 +237,10 @@ for (k in 1:length(omics)) {
                          panSEA.results$mGSEA.results[["Chr8"]]$compiled.results$dot.plot,
                        "GSEA_interactive_network.graph.html" =
                          panSEA.results$mGSEA.network[["Chr8"]]$interactive)
+    all.files <- list('DMEA_with_proteomics' = prot.DMEA.files)
     all.files <- list('GSEA' = GSEA.files,
-                      'DMEA' = DMEA.files)
+                      'DMEA' = DMEA.files,
+                      'DMEA_with_proteomics' = prot.DMEA.files)
     } else {
       # only 53 gene names for "global" (without mouse)! so skipping GSEA
       panSEA.results <- list()
@@ -244,7 +288,45 @@ for (k in 1:length(omics)) {
                          "GSEA_interactive_network.graph.html" =
                            panSEA.results$mGSEA.network$interactive)
       
-      all.files <- list('DMEA' = DMEA.files)
+      # repeat using proteomics as query database
+      prot.panSEA.results <- list()
+      prot.panSEA.results[["mDMEA.results"]] <- 
+        panSEA::mDMEA(weights = data.list, types = types, 
+                      weight.values = GSEA.rank.var, expression = expr)
+      
+      # compile inputs & outputs for network graph
+      inputs <- list()
+      for (i in 1:length(types)) {
+        inputs[[types[i]]] <- 
+          prot.panSEA.results[["mDMEA.results"]]$all.results[[types[i]]]$corr.result
+      }
+      
+      outputs <- list()
+      for (i in 1:length(types)) {
+        outputs[[types[i]]] <- 
+          prot.panSEA.results[["mDMEA.results"]]$all.results[[types[i]]]$result
+      }
+      
+      prot.panSEA.results[["mDMEA.network"]] <-
+        panSEA::netSEA(
+          inputs, outputs, rep("Drug", length(inputs)), 
+          rank.var = rep("Pearson.est", length(inputs))
+        ) 
+      
+      prot.DMEA.files <- list("DMEA_results.csv" =
+                           prot.panSEA.results$mDMEA.results$compiled.results$results,
+                         "DMEA_mean_results.csv" =
+                           prot.panSEA.results$mDMEA.results$compiled.results$mean.results,
+                         "DMEA_correlation_matrix.pdf" =
+                           prot.panSEA.results$mDMEA.results$compiled.results$corr.matrix,
+                         "DMEA_dot_plot.pdf" =
+                           prot.panSEA.results$mDMEA.results$compiled.results$dot.plot,
+                         "DMEA_interactive_network.graph.html" =
+                           prot.panSEA.results$mDMEA.network$interactive)
+      
+      #all.files <- list('DMEA_with_proteomics' = prot.DMEA.files)
+      all.files <- list('DMEA' = DMEA.files,
+                        'DMEA_with_proteomics' = prot.DMEA.files)
     }
   } else {
     # run mGSEA (can't do DMEA because no baseline phospho CCLE data to query)
@@ -337,4 +419,5 @@ for (k in 1:length(omics)) {
     }
   }
   panSEA.results <- NULL # make space to process next omics type
+  prot.panSEA.results <- NULL # make space to process next omics type
 }
