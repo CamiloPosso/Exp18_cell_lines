@@ -1,5 +1,5 @@
 ---
-title: "Chr8 Global proteomics"
+title: "Exp24 Global proteomics"
 output: html_document
 ---
 
@@ -20,9 +20,9 @@ library(PNNL.DMS.utils)
 library(Biostrings)
 library(tidyverse)
 
-data_package_num <- 5243
+data_package_num <- 5391
 data_folder <- "data/global_data"
-crosstab_prefix <- "Chr8"
+crosstab_prefix <- "Exp24"
 
 dir.create(data_folder)
 
@@ -193,12 +193,19 @@ aggregation_level <- c("accession")
 
 # remove non-samples (empty), but keep references
 samples <- samples[samples$ReporterAlias != "EMPTY", ]
+samples$MeasurementName <- as.character(seq(1, nrow(samples)))
 
-debug(create_crosstab)
+#debug(create_crosstab)
 # once in debug environment, run:
 # debug(converting_to_relative_to_reference)
 # because there is more than 1 reference on the plex, after line 35 run: 
 # quant_data_i_w <- dcast(quant_data_i, Specie ~ ReporterAlias, fun.aggregate = mean, value.var = "Abundance")
+
+# this time, getting this error from converting_to_relative_to_reference in create_crosstab:
+# Error in eval(parse(text = ref_i$Reference)) : object 'ref' not found
+# because of line 278 in create_crosstab: https://github.com/PNNL-Comp-Mass-Spec/PlexedPiper/blob/master/R/create_crosstab.R
+# ref_values must be numeric, but parse(text = ref_i$Reference) results in expression(ref) and eval(expression(ref))
+# results in object 'ref' not found. Not sure why because 'ref' was used for other experiments too
 
 quant_cross_tab <- create_crosstab(msnid, 
                                    masic_data, 
