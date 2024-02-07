@@ -41,12 +41,12 @@ samples <- metadataTable %>% as.data.frame() %>%
   mutate(QuantBlock = "1",
          ReporterAlias = as.character(tubeNumber),
          PlexID = as.character(PlexID),
-         ReporterAlias = case_when(is.na(tubeNumber) ~ "ref",
+         ReporterAlias = case_when(is.na(SampleType) ~ "ref",
                                    TRUE ~ ReporterAlias), # customize if reference changes
          ReporterName = case_when(ReporterName == "126C" ~ "126",       ## Here we make the channel names match the
                                   ReporterName == "134" ~ "134N",       ## format of the converter_ion conversion table.
                                   TRUE ~ ReporterName),
-         MeasurementName = as.character(tubeNumber)) # measurement names must be unique
+         MeasurementName = as.character(seq(1, nrow(metadataTable)))) # measurement names must be unique
 
 samples_p <- samples
 #samples_p[grepl("Pooled", samples_p$'patient'), "MeasurementName"] <- c("Pooled 1", "Pooled 2")

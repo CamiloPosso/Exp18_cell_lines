@@ -189,13 +189,18 @@ Abundances are taken relative to the reference channel and then log-transformed.
 
 
 ```{r create_global_gene_crosstab}
+setwd("~/OneDrive - PNNL/Documents/GitHub/Exp24_patient_cells/proteomics/")
+load(file.path(data_folder, "msgfData_filtered.RData"))
+load(file.path(data_folder, "masicData_filtered.RData"))
+
 aggregation_level <- c("accession")
 
 # remove non-samples (empty), but keep references
 samples <- samples[samples$ReporterAlias != "EMPTY", ]
-samples$MeasurementName <- as.character(seq(1, nrow(samples)))
+#samples$MeasurementName <- as.character(seq(1, nrow(samples)))
 
-#debug(create_crosstab)
+# if more than 1 reference per plex:
+# debug(create_crosstab)
 # once in debug environment, run:
 # debug(converting_to_relative_to_reference)
 # because there is more than 1 reference on the plex, after line 35 run: 
@@ -224,7 +229,8 @@ write.table(quant_cross_tab, file=file.path(data_folder, paste(crosstab_prefix, 
 ```{r create_global_peptide_crosstab}
 aggregation_level <- c("peptide")
 
-debug(create_crosstab)
+# if more than 1 reference per plex:
+# debug(create_crosstab)
 # once in debug environment, run:
 # debug(converting_to_relative_to_reference)
 # because there is more than 1 reference on the plex, after line 35 run: 
@@ -255,7 +261,8 @@ psms(msnid_prot) <- psms(msnid_prot) %>%
 
 aggregation_level <- c("accession")
 
-debug(create_crosstab)
+# if more than 1 reference per plex:
+# debug(create_crosstab)
 # once in debug environment, run:
 # debug(converting_to_relative_to_reference)
 # because there is more than 1 reference on the plex, after line 35 run: 

@@ -28,12 +28,12 @@ library(Biostrings)
 library(tidyverse)
 
 
-data_package_num <- 5344
+data_package_num <- 5392
 data_folder <- "data/phospho_data"
-crosstab_prefix <- "Chr8"
+crosstab_prefix <- "Exp24"
 
 ## Use protein level
-path_to_global_crosstab <- "data/global_data/Chr8_crosstab_global_prot_original.txt"
+path_to_global_crosstab <- "data/global_data/Exp24_crosstab_global_prot_original.txt"
 
 dir.create(data_folder)
 
@@ -203,7 +203,8 @@ aggregation_level <- c("SiteID", "peptide")
 # remove non-samples (empty), but keep references
 samples <- samples[samples$ReporterAlias != "EMPTY", ]
 
-debug(create_crosstab)
+# if more than 1 reference per plex:
+# debug(create_crosstab)
 # once in debug environment, run:
 # debug(converting_to_relative_to_reference)
 # because there is more than 1 reference on the plex, after line 35 run: 
