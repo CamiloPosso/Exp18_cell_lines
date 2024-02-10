@@ -14,17 +14,16 @@ synLogin()
 
 
 ```{r upload}
-synapse_id_map <- c("syn53128827" = "data/global_data/", 
-                    "syn53128827" = "data/global_with_mouse_data/",
-                    "syn53128827" = "data/phospho_data/")
+synapse_id_map <- c("syn53493072" = "data/global_data", 
+                    "syn53493072" = "data/phospho_data")
 
 for (i in 1:length(synapse_id_map)) {
   crosstabs <- list.files(path = synapse_id_map[i],
                           pattern = "crosstab.*.txt",
-                          full.names = T)
+                          full.names = TRUE)
   files <- lapply(crosstabs, synapser::File,
          parent = names(synapse_id_map)[i])
-  lapply(files, synStore)
+  lapply(files, synapser::synStore)
 }
 ```
 

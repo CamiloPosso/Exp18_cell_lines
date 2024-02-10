@@ -14,17 +14,16 @@ library(dplyr)
 library(ggplot2)
 library(readxl)
 setwd("~/OneDrive - PNNL/Documents/GitHub/Exp24_patient_cells/")
-global_crosstab <- read.table("../proteomics/data/global_data/Exp24_crosstab_global_gene_original.txt")
-global_with_mouse_crosstab <- read.table("../proteomics/data/global_with_mouse_data/Exp24_crosstab_global_gene_original.txt")
-phospho_crosstab <- read.table("../proteomics/data/phospho_data/Exp24_crosstab_phospho_siteID_original.txt")
-phospho_crosstab_prot <- read.table("../proteomics/data/phospho_data/Exp24_crosstab_phospho_siteID_prot_original.txt", sep = "\t")
+global_crosstab <- read.table("proteomics/data/global_data/Exp24_crosstab_global_gene_original.txt")
+phospho_crosstab <- read.table("proteomics/data/phospho_data/Exp24_crosstab_phospho_siteID_original.txt")
+phospho_crosstab_prot <- read.table("proteomics/data/phospho_data/Exp24_crosstab_phospho_siteID_prot_original.txt", sep = "\t")
 
-meta <- read_excel("../proteomics/data/Exp24metadataTable_TMT.xlsx") 
+meta <- read_excel("proteomics/data/Exp24metadataTable_TMT.xlsx") 
 
 meta <- meta %>%
-  filter(!is.na(Tube)) %>%
+  filter(!is.na(tubeNumber)) %>%
   mutate(Tube = as.character(tubeNumber),
-         Plex = as.character(PlexID),
+         Plex = as.character(Plex),
          MeasurementName = as.character(seq(1, nrow(meta)))) %>% as.data.frame()
 #rownames(meta) <- meta$Tube # duplicate 'row.names' are not allowed (because of EMPTY and PNNL REFERENCE rows)
 rownames(meta) <- meta$MeasurementName
@@ -44,7 +43,18 @@ phospho_prot_mat <- phospho_crosstab_prot[, intersect(as.character(1:ncol(phosph
 
 Divide by number of cells
 ```{r}
-
+sample.info <- na.omit(meta)
+for (i in 1:nrow(sample.info)) {
+  # get number of cells & MeasurementName
+  n.cells <- as.numeric(sample.info$CellNumber[i])
+  measurementName <- sample.info$MeasurementName[i]
+  
+  # divide corresponding columns by number of cells
+  global_crosstab[, measurementName] <- global_crosstab[, measurementName]/n.cells
+  phospho_crosstab[, measurementName] <- phospho_crosstab[, measurementName]/n.cells
+  phospho_crosstab_prot[, measurementName] <- phospho_crosstab_prot[, measurementName]/n.cells
+  phospho_prot_mat[, measurementName] <- phospho_prot_mat[, measurementName]/n.cells
+}
 ```
 
 
@@ -126,17 +136,17 @@ Both datasets show strong batch effect
 
 
 ```{r}
-plot_pca(m_global, phenotype = "Plex") + ggtitle("Global PCA - All features by Plex")
-plot_pca(m_global, phenotype = "patient") + ggtitle("Global PCA")
-plot_pca(m_global, phenotype = "SampleType") + ggtitle("Global PCA")
-plot_pca(m_global, phenotype = "Drug") + ggtitle("Global PCA")
-
-plot_pca(m_phospho, phenotype = "Plex") + ggtitle("Phospho PCA - All features by Plex")
-plot_pca(m_phospho, phenotype = "patient") + ggtitle("Phospho PCA")
-plot_pca(m_phospho, phenotype = "SampleType") + ggtitle("Phospho PCA")
-plot_pca(m_phospho, phenotype = "Drug") + ggtitle("Phospho PCA")
-
-plot_pca(m_phospho_prot, phenotype = "Plex") + ggtitle("Phospho prot PCA - All features by Plex")
+phenos <- c("Plex", "tubeNumber", "patient", "SampleType", "Drug")
+for (i in 1:length(phenos)) {
+  plot_pca(m_global, phenotype = phenos[i]) + ggtitle("Global PCA")
+  ggsave(paste0("exp24_global_PCA_by_", phenos[i], ".pdf"))
+  
+  plot_pca(m_phospho, phenotype = phenos[i]) + ggtitle("Phospho PCA")
+  ggsave(paste0("exp24_phospho_PCA_by_", phenos[i], ".pdf"))
+  
+  plot_pca(m_phospho_prot, phenotype = phenos[i]) + ggtitle("Phospho prot PCA")
+  ggsave(paste0("exp24_phospho_prot_PCA_by_", phenos[i], ".pdf"))
+}
 
 ```
 
@@ -159,13 +169,17 @@ if (length(unique(meta$Plex)) > 1) {
 
 
 ```{r}
-plot_pca(m_global_corrected, phenotype = "Plex") + ggtitle("Global PCA - All features by Plex, Corrected")
-plot_pca(m_global_corrected, phenotype = "SampleID") + ggtitle("Global PCA - All features by Plex, Corrected")
-
-plot_pca(m_phospho_corrected, phenotype = "Plex") + ggtitle("Phospho PCA - All features by Plex, Corrected")
-plot_pca(m_phospho_corrected, phenotype = "SampleID") + ggtitle("Phospho PCA - All features by Plex, Corrected")
-
-plot_pca(m_phospho_prot_corrected, phenotype = "Plex") + ggtitle("Phospho prot PCA - All features by Plex, Corrected")
+phenos <- c("Plex", "tubeNumber", "patient", "SampleType", "Drug")
+for (i in 1:length(phenos)) {
+  plot_pca(m_global_corrected, phenotype = phenos[i]) + ggtitle("Global PCA")
+  ggsave(paste0("exp24_global_corrected_PCA_by_", phenos[i], ".pdf"))
+  
+  plot_pca(m_phospho_corrected, phenotype = phenos[i]) + ggtitle("Phospho PCA")
+  ggsave(paste0("exp24_phospho_corrected_PCA_by_", phenos[i], ".pdf"))
+  
+  plot_pca(m_phospho_prot_corrected, phenotype = phenos[i]) + ggtitle("Phospho prot PCA")
+  ggsave(paste0("exp24_phospho_prot_corrected_PCA_by_", phenos[i], ".pdf"))
+}
 
 ```
 
@@ -237,37 +251,14 @@ crosstab <- read.table(file = "data/phospho_data/Exp24_crosstab_phospho_SiteID_p
             sep="\t")
 colnames(crosstab) <- sub("data.", "", colnames(crosstab))
 
-meta <- read_excel("../proteomics/data/Exp24metadataTable_TMT.xlsx") 
-
-meta <- meta %>%
-  filter(!is.na(Tube)) %>%
-  mutate(Tube = as.character(tubeNumber),
-         Plex = as.character(PlexID),
-         MeasurementName = as.character(seq(1, nrow(meta)))) %>% as.data.frame()
-#rownames(meta) <- meta$Tube # duplicate 'row.names' are not allowed (because of EMPTY and PNNL REFERENCE rows)
-rownames(meta) <- meta$MeasurementName
-
-# remove EMPTY rows
-meta <- meta[meta$Tube != "EMPTY", ]
-
-
-# remove EMPTY rows
-#meta <- meta[meta$Tube != "EMPTY", ]
-
-# add Treatment column
-meta$Treatment <- "Exp24"
-#meta[meta$SampleID == "reference", ]$Treatment <- "reference"
-
 crosstab_kstar <- crosstab %>%
   select(SiteID, Peptide_kstar, Protein_kstar)
 
 # no "baseline" aka control for Exp24 samples
-all_groups <- na.omit(unique(meta$Treatment))
-for (Treatment in all_groups){
-  samples <- meta %>% filter(Treatment == Treatment) %>%
-    pull(Tube)
-  mat <- crosstab[, na.omit(samples)]
-  crosstab_kstar[paste0("data:", Treatment, "_logFC")] <- apply(mat, 1, mean, na.rm = T)
+all_groups <- na.omit(unique(sample.info$MeasurementName))
+for (MeasurementName in all_groups){
+  mat <- as.data.frame(crosstab[, as.character(MeasurementName)])
+  crosstab_kstar[paste0("MeasurementName:", MeasurementName, "_logFC")] <- apply(mat, 1, mean, na.rm = T)
 }
 
 data_folder = "data/phospho_data/"
