@@ -500,7 +500,7 @@ load_BeatAML_for_DMEA <- function(BeatAML.path) {
   ### download files if any not already downloaded
   if (!file.exists(BeatAML.path)) {
     lapply(BeatAML_synapse_id, synapser::synGet, downloadLocation = BeatAML.path)
-  } else if (any(!lapply(names(BeatAML_synapse_id), file.exists))) {
+  } else if (!any(FALSE %in% lapply(names(BeatAML_synapse_id), file.exists))) {
     lapply(BeatAML_synapse_id, synapser::synGet, downloadLocation = BeatAML.path)
   }
   
