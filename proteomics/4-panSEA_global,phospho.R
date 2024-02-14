@@ -53,12 +53,7 @@ moa.BeatAML <- utils::read.csv(
 BeatAML.data <- load_BeatAML_for_DMEA("BeatAML_DMEA_inputs")
 
 #### 3. Run panSEA across sort.types for each omics, sens.type, drug.type ####
-base.path <- "~/OneDrive - PNNL/Documents/GitHub/Exp24_patient_cells/proteomics/data/"
-# synapse IDs must match order of omics list
-synapse_id_map <- c("syn53180717" = "global_data/",
-                    "syn53180718" = "phospho_data/")
-
-# set up comparisons
+## set up comparisons
 #sort.types <- c("CD14+", "CD34+", "MSC")
 sort.types <- unique(na.omit(meta.df$SampleType))
 #sens.types <- c("sensitive", "resistant")
@@ -132,30 +127,9 @@ gmt.features2 <- list(gmt.H, gmt.sub)
 gmt.features3a <- list(gmt, gmt) # for phospho GSEA^2
 gmt.features3b <- list(gmt.H, gmt.H) # for phospho GSEA^2
 
-setwd(
-  "~/OneDrive - PNNL/Documents/GitHub/Exp24_patient_cells/proteomics/"
-)
+setwd("~/OneDrive - PNNL/Documents/GitHub/Exp24_patient_cells/proteomics/")
 dir.create("analysis")
 setwd("analysis")
-for (j in drug.types) {
-  for (i in sens.types) {
-    # filter meta.df
-    meta.filtered <- meta.df[meta.df[ , j] == i, ]
-    
-    # run cell type contrasts for each drug sensitivity
-    run_contrasts_global_phospho(sort.contrasts, "SampleType", meta.filtered,
-                                 omics, beatAML, gmt.features, gmt.features2, 
-                                 gmt.features3a, gmt.features3b, 
-                                 gmt.drug, BeatAML.data$drug, 
-                                 synapse_id = "syn53521265")
-  } 
-}
-# run cell type contrasts without drug sensitivity filter
-run_contrasts_global_phospho(sort.contrasts, "SampleType", meta.df,
-                             omics, beatAML, gmt.features, gmt.features2, 
-                             gmt.features3a, gmt.features3b, 
-                             gmt.drug, BeatAML.data$drug, 
-                             synapse_id = "syn53521265")
 
 for (i in sort.types) {
   # filter meta.df
@@ -175,4 +149,24 @@ for (j in drug.types) {
                                omics, beatAML, gmt.features, gmt.features2, 
                                gmt.features3, gmt.drug, BeatAML.data$drug, 
                                synapse_id = "syn53521265")
+
+for (j in drug.types) {
+  for (i in sens.types) {
+    # filter meta.df
+    meta.filtered <- meta.df[meta.df[ , j] == i, ]
+    
+    # run cell type contrasts for each drug sensitivity
+    run_contrasts_global_phospho(sort.contrasts, "SampleType", meta.filtered,
+                                 omics, beatAML, gmt.features, gmt.features2, 
+                                 gmt.features3a, gmt.features3b, 
+                                 gmt.drug, BeatAML.data$drug, 
+                                 synapse_id = "syn53521265")
+  } 
+}
+# run cell type contrasts without drug sensitivity filter
+run_contrasts_global_phospho(sort.contrasts, "SampleType", meta.df,
+                             omics, beatAML, gmt.features, gmt.features2, 
+                             gmt.features3a, gmt.features3b, 
+                             gmt.drug, BeatAML.data$drug, 
+                             synapse_id = "syn53521265")
 }
