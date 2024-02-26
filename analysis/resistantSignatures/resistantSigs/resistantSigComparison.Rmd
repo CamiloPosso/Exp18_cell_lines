@@ -1,0 +1,85 @@
+---
+title: "signature comparisons"
+author: "Sara Gosline"
+date: "2024-02-16"
+output: html_document
+---
+
+```{r setup, include=FALSE}
+knitr::opts_chunk$set(echo = TRUE)
+library(synapser)
+library(dplyr)
+library(tidyr)
+library(UpSetR)
+```
+
+## Signature comparisons
+The goal of this document is to compare resistant signatures derived from standard differential expression analysis to serve as the baseline for more robust TSP-type approach
+
+```{r get data}
+synLogin()
+
+getProtsByFC<-function(synid,logfc=2){
+   res<-readr::read_csv(synapser::synGet(synid)$path)|>
+    subset(abs(Log2FC)>logfc)
+  if(nrow(res)>0)
+    return(res$Gene)
+  else
+    return(c())
+}
+
+getProtsByPval<-function(synid,pval=0.1){
+  res<-readr::read_csv(synapser::synGet(synid)$path)|>
+    subset(adj.P.Val<pval)
+  if(nrow(res)>0)
+    return(res$Gene)
+  else
+    return(c())
+}
+
+newfile<-'syn53664489'
+
+
+diffex<-readr::read_csv(synGet(newfile)$path)
+
+sig<-subset(diffex,adj.P.Val<0.25)|>
+  subset(Contrast=='Ven_Sensitive_vs_Resistant')|>
+  replace_na(list(Cell_type_filter='All'))
+
+##make wide format
+wide_format<-sig|>
+  select(Feature,Cell_type_filter)|>
+  mutate(val=1)|>
+  pivot_wider(names_from = 'Cell_type_filter',values_from='val',values_fill = 0)
+
+wide_format
+
+```
+
+here is the format that we can use to plot the data
+
+## Signature overlap plot
+
+Our goal is to see how much the signatures overlap
+
+```{r plot, echo=FALSE}
+##make plot
+p<-wide_format|>as.data.frame()|>upset()
+
+p
+```
+
+Now we can collect cell line and patient data as well
+
+
+## Get cell line and patient signatures
+
+Camilo at some point computed these, we need to find the differentially expressed proteins
+
+```{r other sig}
+
+cell_line<-''
+
+patients<-''
+
+```
