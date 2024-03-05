@@ -1,57 +1,29 @@
 ---
-title: "PTRC Ex18 Push to synapse"
+title: "Chr8 Push to synapse"
 output: html_document
 ---
 
 ```{r login}
-library(amlresistancenetworks)
-library(reticulate)
+if (!require("amlresistancenetworks", quietly = TRUE))
+  remotes::install_github("https://github.com/PNNL-CompBio/amlresistancenetworks")
+library(amlresistancenetworks); library(reticulate); library(synapser)
 
-syn <- synapseLogin()
+synLogin()
 
 ```
 
 
 ```{r upload}
-synapse_id_map <- c("syn43185649" = "data/global_data/",
-                    "syn43185649" = "data/phospho_data/")
+synapse_id_map <- c("syn53493072" = "data/global_data", 
+                    "syn53493072" = "data/phospho_data")
 
-for (i in seq_along(synapse_id_map)) {
+for (i in 1:length(synapse_id_map)) {
   crosstabs <- list.files(path = synapse_id_map[i],
                           pattern = "crosstab.*.txt",
-                          full.names = T)
-  lapply(crosstabs, synapseStore,
-         parentId = names(synapse_id_map)[i])
+                          full.names = TRUE)
+  files <- lapply(crosstabs, synapser::File,
+         parent = names(synapse_id_map)[i])
+  lapply(files, synapser::synStore)
 }
-
 ```
-
-
-## Exp 12 + exp 18
-
-
-```{r}
-metadata <- read.table("../proteomics/data/exp_12_18_combined_metadata.txt", sep = "\t")
-
-crosstab <- read.table("../proteomics/data/global_data/exp_12_18_combined_global_corrected.txt", sep = "\t")
-crosstab_long <- crosstab %>%
-  mutate(Gene = rownames(.)) %>%
-  tidyr::pivot_longer(-Gene, names_to = "Sample", values_to = "value") %>%
-  merge(metadata, by = "Sample")
-
-write.table(crosstab_long, "../proteomics/data/global_data/exp_12_18_combined_global_corrected_long.txt", quote = F, sep = "\t")
-synapseStore(path = "../proteomics/data/global_data/exp_12_18_combined_global_corrected_long.txt", parentId = "syn43185649")
-
-crosstab <- read.table("../proteomics/data/phospho_data/exp_12_18_combined_phospho_corrected.txt", sep = "\t")
-crosstab_long <- crosstab %>%
-  mutate(SiteID = rownames(.)) %>%
-  tidyr::pivot_longer(-SiteID, names_to = "Sample", values_to = "value") %>%
-  merge(metadata, by = "Sample")
-
-write.table(crosstab_long, "../proteomics/data/phospho_data/exp_12_18_combined_phospho_corrected_long.txt", quote = F, sep = "\t")
-synapseStore(path = "../proteomics/data/phospho_data/exp_12_18_combined_phospho_corrected_long.txt", parentId = "syn43185649")
-
-
-```
-
 

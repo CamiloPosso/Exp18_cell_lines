@@ -1,5 +1,5 @@
 ---
-title: "Ex18 Phospho proteomics"
+title: "Exp24 Phospho proteomics"
 output: html_document
 ---
 
@@ -19,10 +19,10 @@ library(Biostrings)
 library(tidyverse)
 
 
-data_package_num <- 4136
+data_package_num <- 5392
 data_folder <- "data/phospho_data"
-crosstab_prefix <- "ptrc_ex18"
-path_to_global_crosstab <- "data/global_data/ptrc_ex18_crosstab_global_gene_original.txt"
+crosstab_prefix <- "Exp24"
+path_to_global_crosstab <- "data/global_data/Exp24_crosstab_global_gene_original.txt"
 
 dir.create(data_folder)
 
@@ -65,10 +65,9 @@ show(msnid)
 
 
 ```{r ascore}
-ascore <- get_AScore_results(data_package_num)
+ascore <- read_AScore_results_from_DMS(data_package_num)
 msnid <- best_PTM_location_by_ascore(msnid, ascore)
 msnid <- apply_filter(msnid, "grepl(\"\\\\*\", peptide)")
-
 ```
 
 
@@ -81,8 +80,6 @@ Filtering is done first at peptide level, then at protein level, both with max F
 ## peak selection & Peptide filter
 msnid <- correct_peak_selection(msnid)   ## optional for phospho
 msnid <- filter_msgf_data_peptide_level(msnid, 0.01)
-
-
 ```
 
 
@@ -172,7 +169,7 @@ Output from the MASIC software is read from DMS, then filtered by inteference sc
 
 ```{r read_masic}
 masic_data_path <- file.path(data_folder, "masicData_original.RData")
-
+options(timeout = 120)
 if (file.exists(masic_data_path)) {
   load(masic_data_path)
 } else {
@@ -204,6 +201,18 @@ Abundances are taken relative to the reference channel and then log-transformed.
 
 ```{r create_phospho_site_crosstab}
 aggregation_level <- c("SiteID")
+
+# remove non-samples (empty), but keep references
+samples <- samples[samples$ReporterAlias != "EMPTY", ]
+
+# if more than 1 reference per plex:
+# debug(create_crosstab)
+# once in debug environment, run:
+# debug(converting_to_relative_to_reference)
+# because there is more than 1 reference on the plex, after line 35 run: 
+# quant_data_i_w <- dcast(quant_data_i, Specie ~ ReporterAlias, fun.aggregate = mean, value.var = "Abundance")
+
+# masic has G but frac, msnid have P in dataset entries
 crosstab <- create_crosstab(msnid, masic_data,
                             aggregation_level,
                             fractions, samples, references)
@@ -219,6 +228,14 @@ write.table(signif(crosstab, 5),
 
 ```{r create_phospho_peptide_crosstab}
 aggregation_level <- c("SiteID", "peptide")
+
+# if more than 1 reference per plex:
+# debug(create_crosstab)
+# once in debug environment, run:
+# debug(converting_to_relative_to_reference)
+# because there is more than 1 reference on the plex, after line 35 run: 
+# quant_data_i_w <- dcast(quant_data_i, Specie ~ ReporterAlias, fun.aggregate = mean, value.var = "Abundance")
+
 crosstab <- create_crosstab(msnid, masic_data,
                             aggregation_level,
                             fractions, samples, references)

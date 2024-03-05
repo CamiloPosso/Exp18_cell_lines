@@ -1,0 +1,318 @@
+---
+title: "signature comparisons"
+author: "Sara Gosline"
+date: "2024-02-16"
+output: html_document
+---
+
+```{r setup, include=FALSE}
+knitr::opts_chunk$set(echo = TRUE)
+library(synapser)
+library(dplyr)
+library(tidyr)
+library(UpSetR)
+```
+
+## Signature comparisons
+The goal of this document is to compare resistant signatures derived from standard differential expression analysis to serve as the baseline for more robust TSP-type approach
+
+```{r get data}
+synLogin()
+
+######sorted cell data
+##crosstabs
+prot_crosstab<-read.table(synGet('syn53493076')$path,check.names=F)
+phos_crosstab<-read.table(synGet('syn53493086')$path,check.names=F)
+
+##diffex results from belinda
+newfile<-'syn53664489'
+diffex<-readr::read_csv(synGet(newfile)$path)
+
+###signature from camilo
+ven_sigs<-readxl::read_xlsx(synGet('syn53755510')$path)$feature
+
+##metdata
+sens<-readr::read_csv(synGet('syn53627410')$path)
+metadata <- readxl::read_xlsx(synGet('syn53461075')$path)|>
+  left_join(sens)
+
+
+sig<-subset(diffex,adj.P.Val<0.05)|>
+  subset(Contrast=='Ven_Sensitive_vs_Resistant')|>
+  replace_na(list(Cell_type_filter='All'))|>
+  subset(Feature%in%rownames(prot_crosstab))
+allsig<-subset(sig,Cell_type_filter='All')
+
+print(paste("We have",nrow(sig),'features from sorted cell data'))
+
+#######MOLM 14 data
+cell_line_meta<-read.table(synGet('syn52659453')$path,check.names=F,header=T)
+cell_line=read.table(synGet('syn51197031')$path,check.names=F)
+
+g_res<-subset(cell_line_meta,TS_%in%c('G_Early','G_Late'))
+gv_res<-subset(cell_line_meta,TS_%in%c('GV_Early','GV_Late'))
+
+##do diffex to get sig
+library(limma)
+groups<-c(rep(1,nrow(gv_res)),rep(0,nrow(g_res)))
+
+cell_line<-cell_line[,c(gv_res$Sample,g_res$Sample)]
+cell_line_annotes<-data.frame(Ven=c(rep('Resistant',nrow(gv_res)),rep('Sensitive',nrow(g_res))))
+rownames(cell_line_annotes)<-colnames(cell_line)
+eset<-Biobase::ExpressionSet(as.matrix(cell_line))
+
+design<-model.matrix(~groups,eset)
+fit<-limma::lmFit(eset,design)
+fit<-limma::eBayes(fit)
+
+cell_line[which(is.na(cell_line),arr.ind=T)]<-0.0
+
+cdiffex<-topTable(fit,p.value=1,number=4000)|>
+  tibble::rownames_to_column('Feature')
+
+cell_line_sig=subset(cdiffex,adj.P.Val<0.05)|>
+  subset(abs(logFC)>0.25)|>
+  mutate(up_in_cellline_sens=logFC<0)
+
+print(paste('We have',nrow(cell_line_sig),'features from cell line data'))
+########resistant patient data
+pat_meta<-''
+pat_data<-''
+
+pat_sig<-''
+
+
+```
+
+## Signature overlap
+Using this baseline approach, how many proteins are in common between signatures?
+
+```{r overlap}
+library(ggVennDiagram)
+
+x<-list(Sorted=allsig$Feature,CellLine=cell_line_sig$Feature,Patient=ven_sigs)
+ggVennDiagram(x)
+
+```
+
+
+
+## Plot signatures in different datasets
+
+```{r signature plots}
+##make wide format
+#wide_format<-sig|>
+#  select(Feature,Cell_type_filter)|>
+#  mutate(val=1)|>
+#  pivot_wider(names_from = 'Cell_type_filter',values_from='val',values_fill = 0)
+
+row_annotes<-updown<-sig|>dplyr::mutate(up_in_sens=Log2FC>0)|>
+  mutate(val=TRUE)|>
+  dplyr::select(Feature,up_in_sens,val,Cell_type_filter)|>
+  tidyr::pivot_wider(names_from=Cell_type_filter,values_from=val,values_fill=FALSE)|>
+  tibble::column_to_rownames('Feature')
+
+row_annotes<-apply(row_annotes,2,as.factor)
+
+col_annotes<-metadata|>
+  subset(!is.na(SampleType))|>
+  mutate(Sample=as.factor(SampleType),VenetoclaxSens=as.factor(Ven),AzaSens=as.factor(Aza),AzaVenSens=as.factor(`Aza+Ven`))|>
+  dplyr::select(Sample,VenetoclaxSens,AzaSens,AzaVenSens)|>
+  as.data.frame()
+rownames(col_annotes)<-colnames(prot_crosstab)
+
+prot_crosstab[which(is.na(prot_crosstab),arr.ind=TRUE)]<-0.0
+phos_crosstab[which(is.na(phos_crosstab),arr.ind=TRUE)]<-0.0
+
+#mat<-prot_crosstab|>
+#  tibble::column_to_rownames('Gene')
+library(pheatmap)
+pheatmap(prot_crosstab[unique(sig$Feature),],labels_row = rep('',length(unique(sig$Feature))),
+         annotation_row = as.data.frame(row_annotes[,c('All','CD14+','up_in_sens')]),
+         annotation_col = col_annotes,clustering_method='ward.D2')
+
+
+
+###two signatures on sorted cells
+pheatmap(prot_crosstab[unique(allsig$Feature),],labels_row=rep('',length(unique(sig$Feature))),
+         #annotation_row = as.data.frame(row_annotes[,c('All','CD14+','CD34+ Flow','up_in_sens')]),
+         annotation_col = col_annotes,clustering_method = 'ward.D2',main='Sorted signature on sorted cells')
+
+pheatmap(prot_crosstab[intersect(cell_line_sig$Feature,rownames(prot_crosstab)),],
+         annotation_col = col_annotes,labels_row = rep('',length(intersect(cell_line_sig$Feature,rownames(prot_crosstab)))),
+         clustering_method='ward.D2',main='Cell line signature on sorted cells')
+
+
+###two signatures on cell lines
+pheatmap(cell_line[cell_line_sig$Feature,],labels_row=rep('',length(unique(cell_line_sig$Feature))),
+         annotation_col = cell_line_annotes,
+         clustering_method = 'ward.D2',main='Cell line signature on cell lines')
+
+pheatmap(cell_line[intersect(allsig$Feature,rownames(cell_line)),],
+         annotation_col = cell_line_annotes, 
+         labels_row = rep('',length(intersect(allsig$Feature,rownames(cell_line)))),
+         clustering_method='ward.D2',main='Sorted signature on cell lines')
+
+
+##two signatures on patient data
+
+```
+
+here is the format that we can use to plot the data
+## Cell type specific signatures
+
+We can also get signatures from specific cell types if we relax the FDR threshold to 0.25
+
+```{r ct sigs}
+
+res<-subset(diffex,!is.na(Cell_type_filter))|>
+  subset(adj.P.Val<0.25)
+  
+ven_cd14<-subset(res,Cell_type_filter=='CD14+')|>
+  subset(Contrast=='Ven_Sensitive_vs_Resistant')
+
+ven_cd34<-subset(res,Cell_type_filter=='CD34+')|>
+  subset(Contrast=='Ven_Sensitive_vs_Resistant')
+
+ven_msc<-subset(res,Cell_type_filter=='MSC Flow')|>
+  subset(Contrast=='Ven_Sensitive_vs_Resistant')
+
+pheatmap(rbind(prot_crosstab,phos_crosstab)[unique(ven_cd14$Feature),rownames(col_annotes)[grep('CD14',col_annotes$Sample)]],
+                                            #labels_row=rep('',length(unique(sig$Feature))),
+         #annotation_row = as.data.frame(row_annotes[,c('All','CD14+','CD34+ Flow','up_in_sens')]),
+         annotation_col = col_annotes[,c('Sample','VenetoclaxSens')],clustering_method = 'ward.D2',main='CD14+ Ven Sig')
+
+
+pheatmap(rbind(prot_crosstab,phos_crosstab)[unique(ven_cd34$Feature),rownames(col_annotes)[grep('CD34',col_annotes$Sample)]],#labels_row=rep('',length(unique(sig$Feature))),
+         #annotation_row = as.data.frame(row_annotes[,c('All','CD14+','CD34+ Flow','up_in_sens')]),
+         annotation_col = col_annotes[,c('Sample','VenetoclaxSens')],clustering_method = 'ward.D2',main='CD34+ Ven Sig')
+
+
+pheatmap(rbind(prot_crosstab,phos_crosstab)[unique(ven_msc$Feature),rownames(col_annotes)[grep('MSC',col_annotes$Sample)]],#labels_row=rep('',length(unique(sig$Feature))),
+         #annotation_row = as.data.frame(row_annotes[,c('All','CD14+','CD34+ Flow','up_in_sens')]),
+         annotation_col = col_annotes[,c('Sample','VenetoclaxSens')],clustering_method = 'ward.D2',main='MSC Ven Sig')
+
+
+av_cd14<-subset(res,Cell_type_filter=='CD14+')|>
+  subset(Contrast=='Aza.Ven_Sensitive_vs_Resistant')
+
+av_cd34<-subset(diffex,!is.na(Cell_type_filter))|>
+  subset(adj.P.Val<0.5)|>
+  subset(Cell_type_filter=='CD34+')|>
+  subset(Contrast=='Aza.Ven_Sensitive_vs_Resistant')
+
+av_msc<-subset(res,Cell_type_filter=='MSC Flow')|>
+  subset(Contrast=='Aza.Ven_Sensitive_vs_Resistant')
+
+pheatmap(rbind(prot_crosstab,phos_crosstab)[unique(av_cd14$Feature),rownames(col_annotes)[grep('CD14',col_annotes$Sample)]],
+                labels_row=rep('',length(unique(av_cd14$Feature))),
+         #annotation_row = as.data.frame(row_annotes[,c('All','CD14+','CD34+ Flow','up_in_sens')]),
+         annotation_col = col_annotes[,c('Sample','AzaVenSens')],clustering_method = 'ward.D2',main='CD14+ Aza Ven Sig')
+
+
+pheatmap(rbind(prot_crosstab,phos_crosstab)[unique(av_cd34$Feature),rownames(col_annotes)[grep('CD34',col_annotes$Sample)]],#labels_row=rep('',length(unique(sig$Feature))),
+         #annotation_row = as.data.frame(row_annotes[,c('All','CD14+','CD34+ Flow','up_in_sens')]),
+         annotation_col = col_annotes[,c('Sample','AzaVenSens')],
+         clustering_method = 'ward.D2',
+         main='CD34+ Aza Ven Sig')
+
+  
+pheatmap(rbind(prot_crosstab,phos_crosstab)[unique(av_msc$Feature),rownames(col_annotes)[grep('MSC',col_annotes$Sample)]],#labels_row=rep('',length(unique(sig$Feature))),
+         #annotation_row = as.data.frame(row_annotes[,c('All','CD14+','CD34+ Flow','up_in_sens')]),
+         annotation_col = col_annotes,clustering_method = 'ward.D2',main='MSC Aza Ven Sig')
+```
+
+## Sensitive vs. resistant boxplots
+
+For each signature we can determine how well patient values are separated.
+
+```{r plot, echo=FALSE}
+library(ggplot2)
+
+##get gene specific data -whether it is in each signature, and whic direction
+updown<-sig|>
+  subset(Cell_type_filter=='All')|>
+  dplyr::mutate(up_in_sorted_sens=Log2FC>0)|>
+#  mutate(val=TRUE)|>
+  dplyr::select(Feature,up_in_sorted_sens)#|>,val,Cell_type_filter)|>
+  #tidyr::pivot_wider(names_from=Cell_type_filter,values_from=val,values_fill=FALSE)
+
+updown<-cell_line_sig|>
+  mutate(CellLine=TRUE)|>
+  dplyr::select(Feature,up_in_cellline_sens)|>
+  full_join(updown)
+
+
+###now get sample metadata - is the sample known to be venetoclax sensitive or resistant
+mdata<-metadata|>dplyr::select(SampleType,Ven)|>
+  tibble::rownames_to_column('sampleid')|>
+  distinct()
+
+clmdata<-cell_line_annotes|>
+  tibble::rownames_to_column('sampleid')|>
+  mutate(SampleType='Cell Line')|>
+  rbind(mdata)
+
+protdata<-prot_crosstab|>
+  tibble::rownames_to_column('Feature')|>
+  tidyr::pivot_longer(cols=c(2:(ncol(prot_crosstab)+1)),names_to = 'sampleid',values_to='logratio')|>
+left_join(updown)|>
+left_join(clmdata)|>
+  dplyr::select(Feature,logratio,up_in_sorted_sens,SampleType,Ven,up_in_cellline_sens)
+
+
+cell_line_data<-cell_line|>
+  tibble::rownames_to_column('Feature')|>
+  tidyr::pivot_longer(cols=c(2:(ncol(cell_line)+1)),names_to = 'sampleid',values_to='logratio')|>
+     left_join(updown)|>
+  left_join(clmdata)|>
+  dplyr::select(Feature,logratio,up_in_sorted_sens,SampleType,Ven,up_in_cellline_sens)
+
+
+full_data<-rbind(cell_line_data,protdata)|>
+subset(SampleType%in%c('CD14+','CD34+','MSC Flow','Cell Line'))
+
+full_data|>subset(!is.na(up_in_sorted_sens))|>
+  ggplot(aes(x=SampleType,fill=Ven,y=logratio))+geom_boxplot()+facet_grid(up_in_sorted_sens~.)+
+  ggtitle("Sorted signature")
+
+full_data|>subset(!is.na(up_in_cellline_sens))|>
+  ggplot(aes(x=SampleType,fill=Ven,y=logratio))+geom_boxplot()+facet_grid(up_in_cellline_sens~.)+
+  ggtitle("Cell line signature") ##fix NA
+
+#cell_line_data|>
+# subset(feature%in%cell_line_sig$Feature)|>
+#  ggplot(aes(x=SampleType,fill=Ven,y=logratio))+geom_boxplot()+facet_grid(up_in_sorted_sens~.)+
+#  ggtitle("Cell line signature on cell line data") ##fix NA
+
+#cell_line_data|>
+# subset(feature%in%allSig$Feature)|>
+#  ggplot(aes(x=SampleType,fill=Ven,y=logratio))+geom_boxplot()+facet_grid(up_in_sorted_sens~.)+
+#  ggtitle("Cell line signature on cell line data") ##fix NA
+
+```
+
+Now we can collect cell line and patient data as well
+
+
+## Get cell line and patient signatures
+
+Camilo at some point computed these, we need to find the differentially expressed proteins
+
+```{r other sig}
+
+sorted<-readxl::read_xlsx(synGet('syn53759733')$path)|>
+  dplyr::select(SampleType,`signature ratio`='model',sensitive)|>
+  mutate('Venetoclax response'=ifelse(sensitive,'Sensitive','Resistant'))|>
+  dplyr::select(-sensitive)
+
+cohort<-readxl::read_xlsx(synGet('syn53762067')$path)|>
+  dplyr::select(`signature ratio`='model',`Venetoclax response`='Ven_label')|>
+  dplyr::mutate(SampleType='patient')
+
+
+rbind(cohort,sorted)|>
+  subset(SampleType%in%c('patient','CD14+','CD34+','MSC Flow'))|>
+  ggplot(aes(x=SampleType,y=`signature ratio`,fill=`Venetoclax response`))+geom_boxplot()
+
+```

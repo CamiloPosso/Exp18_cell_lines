@@ -1,5 +1,5 @@
 ---
-title: "Ex18 Global proteomics"
+title: "Exp24 Global proteomics"
 output: html_document
 ---
 
@@ -20,11 +20,11 @@ library(PNNL.DMS.utils)
 library(Biostrings)
 library(tidyverse)
 
-data_package_num <- 4135
+data_package_num <- 5391
 data_folder <- "data/global_data"
-crosstab_prefix <- "ptrc_ex18"
+crosstab_prefix <- "Exp24"
 
-# dir.create(data_folder)
+dir.create(data_folder)
 
 ```
 
@@ -76,7 +76,11 @@ msnid <- filter_msgf_data_peptide_level(msnid, 0.01)
 This function remaps UniProt protein accessions to gene symbol.
 
 ```{r remap_accessions}
+options(timeout = 120)
+# get fst_dms_path from:
+path_to_FASTA_used_by_DMS(data_package_num)
 fst_dms_pth <- path_to_FASTA_used_by_DMS(data_package_num)
+
 fst <- readAAStringSet(fst_dms_pth)
 
 conv <- data.frame(NAME = names(fst)) %>%
@@ -155,6 +159,7 @@ Output from the MASIC software is read from DMS, then filtered by interference s
 ```{r read_masic}
 masic_data_path <- file.path(data_folder, "masicData_original.RData")
 
+options(timeout = 120)
 if (file.exists(masic_data_path)) {
   load(masic_data_path)
 } else {
@@ -184,11 +189,34 @@ Abundances are taken relative to the reference channel and then log-transformed.
 
 
 ```{r create_global_gene_crosstab}
+setwd("~/OneDrive - PNNL/Documents/GitHub/Exp24_patient_cells/proteomics/")
+load(file.path(data_folder, "msgfData_filtered.RData"))
+load(file.path(data_folder, "masicData_filtered.RData"))
+
 aggregation_level <- c("accession")
+
+# remove non-samples (empty), but keep references
+samples <- samples[samples$ReporterAlias != "EMPTY", ]
+#samples$MeasurementName <- as.character(seq(1, nrow(samples)))
+
+# if more than 1 reference per plex:
+# debug(create_crosstab)
+# once in debug environment, run:
+# debug(converting_to_relative_to_reference)
+# because there is more than 1 reference on the plex, after line 35 run: 
+# quant_data_i_w <- dcast(quant_data_i, Specie ~ ReporterAlias, fun.aggregate = mean, value.var = "Abundance")
+
+# this time, getting this error from converting_to_relative_to_reference in create_crosstab:
+# Error in eval(parse(text = ref_i$Reference)) : object 'ref' not found
+# because of line 278 in create_crosstab: https://github.com/PNNL-Comp-Mass-Spec/PlexedPiper/blob/master/R/create_crosstab.R
+# ref_values must be numeric, but parse(text = ref_i$Reference) results in expression(ref) and eval(expression(ref))
+# results in object 'ref' not found. Not sure why because 'ref' was used for other experiments too
+
 quant_cross_tab <- create_crosstab(msnid, 
                                    masic_data, 
                                    aggregation_level, 
                                    fractions, samples, references)
+
 dim(quant_cross_tab)
 
 write.table(quant_cross_tab, file=file.path(data_folder, paste(crosstab_prefix, "crosstab_global_gene_original.txt", sep="_")),
@@ -200,6 +228,14 @@ write.table(quant_cross_tab, file=file.path(data_folder, paste(crosstab_prefix, 
 
 ```{r create_global_peptide_crosstab}
 aggregation_level <- c("peptide")
+
+# if more than 1 reference per plex:
+# debug(create_crosstab)
+# once in debug environment, run:
+# debug(converting_to_relative_to_reference)
+# because there is more than 1 reference on the plex, after line 35 run: 
+# quant_data_i_w <- dcast(quant_data_i, Specie ~ ReporterAlias, fun.aggregate = mean, value.var = "Abundance")
+
 quant_cross_tab <- create_crosstab(msnid, 
                                    masic_data, 
                                    aggregation_level, 
@@ -214,7 +250,6 @@ crosstab <- left_join(crosstab, xx, by = "peptide")
 write.table(crosstab %>% select(peptide, pepSeq, accession, everything()), 
             file=file.path(data_folder, paste(crosstab_prefix, "crosstab_global_peptide_original.txt", sep="_")),
             quote=F, sep="\t")
-
 ```
 
 
@@ -225,6 +260,14 @@ psms(msnid_prot) <- psms(msnid_prot) %>%
   filter(!grepl("Contaminant", accession))
 
 aggregation_level <- c("accession")
+
+# if more than 1 reference per plex:
+# debug(create_crosstab)
+# once in debug environment, run:
+# debug(converting_to_relative_to_reference)
+# because there is more than 1 reference on the plex, after line 35 run: 
+# quant_data_i_w <- dcast(quant_data_i, Specie ~ ReporterAlias, fun.aggregate = mean, value.var = "Abundance")
+
 quant_cross_tab_prot <- create_crosstab(msnid_prot, 
                                         masic_data, 
                                         aggregation_level, 
@@ -233,9 +276,6 @@ dim(quant_cross_tab_prot)
 
 write.table(quant_cross_tab_prot, file=file.path(data_folder, paste(crosstab_prefix, "crosstab_global_prot_original.txt", sep="_")),
             quote=F, sep="\t")
-
-# write.table(quant_cross_tab, file=file.path(data_folder, paste(crosstab_prefix, "crosstab_global_gene_original.txt", sep="_")),
-#             quote=F, sep="\t")
 ```
 
 

@@ -8,7 +8,7 @@ date: "2022-11-14"
 
 
 ---
-title: "Ex18 Phospho proteomics"
+title: "Ex22 Phospho proteomics"
 output: html_document
 ---
 
@@ -28,12 +28,12 @@ library(Biostrings)
 library(tidyverse)
 
 
-data_package_num <- 4136
+data_package_num <- 5392
 data_folder <- "data/phospho_data"
-crosstab_prefix <- "ptrc_ex18"
+crosstab_prefix <- "Exp24"
 
 ## Use protein level
-path_to_global_crosstab <- "data/global_data/ptrc_ex18_crosstab_global_prot_original.txt"
+path_to_global_crosstab <- "data/global_data/Exp24_crosstab_global_prot_original.txt"
 
 dir.create(data_folder)
 
@@ -76,7 +76,7 @@ show(msnid)
 
 
 ```{r ascore}
-ascore <- get_AScore_results(data_package_num)
+ascore <- read_AScore_results_from_DMS(data_package_num)
 msnid <- best_PTM_location_by_ascore(msnid, ascore)
 msnid <- apply_filter(msnid, "grepl(\"\\\\*\", peptide)")
 
@@ -134,6 +134,7 @@ show(msnid)
 ```{r map_mod_sites}
 library(Biostrings)
 
+options(timeout = 120)
 path_to_FASTA <- path_to_FASTA_used_by_DMS(data_package_num)
 
 mySequences <- readAAStringSet(path_to_FASTA)
@@ -198,6 +199,17 @@ Abundances are taken relative to the reference channel and then log-transformed.
 
 ```{r create_phospho_peptide_crosstab, eval=FALSE, include=FALSE}
 aggregation_level <- c("SiteID", "peptide")
+
+# remove non-samples (empty), but keep references
+samples <- samples[samples$ReporterAlias != "EMPTY", ]
+
+# if more than 1 reference per plex:
+# debug(create_crosstab)
+# once in debug environment, run:
+# debug(converting_to_relative_to_reference)
+# because there is more than 1 reference on the plex, after line 35 run: 
+# quant_data_i_w <- dcast(quant_data_i, Specie ~ ReporterAlias, fun.aggregate = mean, value.var = "Abundance")
+
 crosstab <- create_crosstab(msnid, masic_data,
                             aggregation_level,
                             fractions, samples, references)
@@ -284,6 +296,13 @@ peptide_kstar <- peptide_kstar %>%
   ungroup() %>% unique()
 
 aggregation_level <- c("SiteID")
+
+debug(create_crosstab)
+# once in debug environment, run:
+# debug(converting_to_relative_to_reference)
+# because there is more than 1 reference on the plex, after line 35 run: 
+# quant_data_i_w <- dcast(quant_data_i, Specie ~ ReporterAlias, fun.aggregate = mean, value.var = "Abundance")
+
 crosstab <- create_crosstab(msnid, masic_data,
                             aggregation_level,
                             fractions, samples, references)
